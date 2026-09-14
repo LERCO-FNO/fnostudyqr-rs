@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand, ValueEnum};
-use dicom_object::InMemDicomObject;
 use snafu::{Report, Whatever, prelude::*};
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddrV4};
@@ -223,7 +222,19 @@ fn run() -> Result<(), Error> {
 }
 
 fn parse_query_tags(query_tags: Vec<String>) -> Result<Vec<TermQuery>, Whatever> {
-    query_tags.iter().map(|t| t.parse::<TermQuery>()).collect()
+    let mut tags = query_tags
+        .iter()
+        .map(|t| t.parse::<TermQuery>())
+        .collect::<Result<Vec<TermQuery>, _>>()
+        .whatever_context("Could not parse query tags")?;
+    let study_tag: TermQuery = "StudyInstanceUID".parse().unwrap();
+
+    // always add StudyInstanceUID to be part of responses
+    if !tags.iter().any(|t| t.selector == study_tag.selector) {
+        tags.insert(0, study_tag);
+    }
+
+    Ok(tags)
 }
 
 #[derive(Clone)]

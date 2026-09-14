@@ -14,10 +14,14 @@ pub fn write_responses_to_file(
     let dict = StandardDataDictionary;
 
     let mut writer = csv::WriterBuilder::new().delimiter(b';').from_path(&path)?;
-    let header_tags: Vec<Tag> = [tags::PATIENT_ID, tags::STUDY_INSTANCE_UID]
-        .into_iter()
-        .chain(other_tags.iter().map(|t| t.selector.last_tag()))
-        .collect();
+    // let header_tags: Vec<Tag> = [tags::PATIENT_ID, tags::STUDY_INSTANCE_UID]
+    //     .into_iter()
+    //     .chain(other_tags.iter().map(|t| t.selector.last_tag()))
+    //     .collect();
+    let header_tags = other_tags
+        .iter()
+        .map(|t| t.selector.last_tag())
+        .collect::<Vec<Tag>>();
     let header_serialized = header_tags
         .iter()
         .map(|t| dict.by_tag(*t).unwrap().alias.to_string())

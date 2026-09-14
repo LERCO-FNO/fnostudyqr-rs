@@ -24,7 +24,11 @@ pub fn build_queries(
     let datasets = if let Some(file) = file {
         datasets_from_file(file)?
     } else {
-        vec![InMemDicomObject::new_empty()]
+        vec![InMemDicomObject::from_element_iter([DataElement::new(
+            tags::STUDY_INSTANCE_UID,
+            VR::UI,
+            PrimitiveValue::Empty,
+        )])]
     };
     let mut datasets = override_tags(datasets, tags)
         .whatever_context("Could not add tags from arguments to datasets")?;
@@ -94,6 +98,7 @@ fn row_to_dataset(
     Ok(InMemDicomObject::from_element_iter(elements))
 }
 
+#[derive(Debug, PartialEq)]
 struct HeaderTag {
     tag: Tag,
     vr: VR,
@@ -148,6 +153,8 @@ fn override_tags(
         let value = term_to_value(t.selector.last_tag(), &t.value)?;
 
         for ds in datasets.iter_mut() {
+            // override a value only if tag is missing
+            // TODO: also check for PrimitiveValue::Empty?
             if ds.get(t.selector.last_tag()).is_none() {
                 ds.apply(AttributeOp::new(
                     t.selector.clone(),
