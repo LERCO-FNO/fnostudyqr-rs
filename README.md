@@ -31,6 +31,7 @@ A query/retrieve tool for a bulk of DICOM studies.
 Tags can be specified as keyword or hex value `(gggg,eeee)` with leading zeroes, ex. `PatientID`, `(0010,0020)` or `0010,0020`.
 * Find request may contain any DICOM tags up to the requested information level, ex: requesting PatientID and StudyDate at level `series` will match to all series per requested study. Value matching is case-sensitive.
 * Empty tag value will be overwritten by matching `<query-tag>` value.
+* Order of date elements must be *YYYY-MM-DD* and time elements *H:M:S*, including leading zeroes, otherwise values will be incorrectly matched.
 
 ##### Example input file
 ```csv
@@ -41,8 +42,7 @@ PatientID;(0008,0020);StudyInstanceUID
 
 ##### Value matching:
 * Tag values in input file and command line allow for pattern matching with asterisk `*`.
-
-Separate date and time values allow for range matching. Use double-period `..` to specify date or time range. Datetime
+* Separate date and time values (command line or input file) allow for range matching. Use double-period `..` to specify date or time range. For example, `-t StudyDate=2000-01-01..` will match all studies since this date (Y-M-D).
 
 ## Acknowledgement
 This command line tool uses [dicom-rs's](https://github.com/Enet4/dicom-rs) *findscu* and *movescu* crates, combining them as one application. This repository only adds/changes some parts to allow querying/requesting a list of studies within a single runtime.
