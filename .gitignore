@@ -1,0 +1,7 @@
+# editor folders
+/.zed
+
+/target
+/output
+
+*.csv

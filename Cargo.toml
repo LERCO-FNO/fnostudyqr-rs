@@ -1,0 +1,19 @@
+[package]
+name = "fnostudyqr"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.6", features = ["derive"] }
+csv = "1.4.0"
+dicom-core = "0.10.0"
+dicom-dictionary-std = "0.10.0"
+dicom-dump = "0.10.0"
+dicom-encoding = "0.10.0"
+dicom-object = "0.10.0"
+dicom-transfer-syntax-registry = "0.10.0"
+dicom-ul = { version = "0.10.0", features = ["async"] }
+snafu = "0.9.2"
+tokio = { version = "1.53.1", features = ["full"] }
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
