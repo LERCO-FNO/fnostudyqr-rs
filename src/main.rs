@@ -84,7 +84,7 @@ enum Error {
     },
 
     /// Could not construct DICOM command
-    CreateCommand {
+    _CreateCommand {
         source: dicom_object::ReadError,
     },
 
@@ -197,17 +197,13 @@ fn run() -> Result<(), Error> {
             };
 
             let handle = runtime.spawn(async move {
-                let proceed = run_async(store_args).await.unwrap_or_else(|err| {
+                let _ = run_async(store_args).await.unwrap_or_else(|err| {
                     error!("{:?}", Report::from_error(err));
                     std::process::exit(-2);
                 });
-
-                // if !proceed {
-                //     std::process::exit(-2);
-                // }
             });
 
-            let res = client.move_study(ds_queries, &move_destination);
+            let _ = client.move_study(ds_queries, &move_destination);
             handle.abort();
             Ok(())
         }
