@@ -1,5 +1,5 @@
 # fnostudyqr-rs
-A query/retrieve tool for a bulk of DICOM studies.
+A CLI query/retrieve tool for a bulk of DICOM studies.
 
 
 ## Usage
@@ -40,9 +40,17 @@ PatientID;(0008,0020);StudyInstanceUID
 02;20050101;
 ```
 
+##### Example output file
+```csv
+PatientID;StudyDate;StudyDescription;...
+01;20050101;AbdomenLungRoutine
+02;20050101;HeadCT
+```
+* File tags preceed command line tags.
+
 ##### Value matching:
 * Tag values in input file and command line allow for pattern matching with asterisk `*`.
-* Separate date and time values (command line or input file) allow for range matching. Use double-period `..` to specify date or time range. For example, `-t StudyDate=2000-01-01..` will match all studies since this date (Y-M-D).
+* Separate date and time values (command line or input file) allow for range matching. Use double-period `..` to specify date or time range. For example, `-t StudyDate=2000-01-01..` (YYYY-MM-DD) will match all studies since this date 1st January 2000.
 
 ## Acknowledgement
 This command line tool uses [dicom-rs's](https://github.com/Enet4/dicom-rs) *findscu* and *movescu* crates, combining them as one application. This repository only adds/changes some parts to allow querying/requesting a list of studies within a single runtime.
