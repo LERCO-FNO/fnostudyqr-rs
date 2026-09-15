@@ -17,11 +17,11 @@ use crate::utils::*;
 
 pub fn build_queries(
     file: Option<PathBuf>,
-    tags: &[TermQuery],
+    term_tags: Vec<TermQuery>,
     information_model: &InformationLevel,
     _verbose: bool,
-) -> Result<Vec<InMemDicomObject>, Error> {
-    let datasets = if let Some(file) = file {
+) -> Result<(Vec<InMemDicomObject>, Vec<Tag>), Error> {
+    let (datasets, file_tags) = if let Some(file) = file {
         datasets_from_file(file)?
     } else {
         vec![InMemDicomObject::from_element_iter([DataElement::new(
@@ -30,7 +30,7 @@ pub fn build_queries(
             PrimitiveValue::Empty,
         )])]
     };
-    let mut datasets = override_tags(datasets, tags)
+    let mut datasets = override_tags(datasets, &term_tags)
         .whatever_context("Could not add tags from arguments to datasets")?;
 
     let level = match information_model {
@@ -49,10 +49,11 @@ pub fn build_queries(
         }
     });
 
-    Ok(datasets)
+    let merged_tags = merge_tags(file_tags, term_tags);
+    Ok((datasets, merged_tags))
 }
 
-fn datasets_from_file(file: PathBuf) -> Result<Vec<InMemDicomObject>, Error> {
+fn datasets_from_file(file: PathBuf) -> Result<(Vec<InMemDicomObject>, Vec<HeaderTag>), Error> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
         .delimiter(b';')
@@ -78,7 +79,7 @@ fn datasets_from_file(file: PathBuf) -> Result<Vec<InMemDicomObject>, Error> {
         })
         .collect::<Result<Vec<InMemDicomObject>, Whatever>>()
         .whatever_context("Could not create datasets from file")?;
-    Ok(datasets)
+    Ok((datasets, tags))
 }
 
 fn row_to_dataset(
@@ -147,9 +148,9 @@ impl FromStr for TermQuery {
 
 fn override_tags(
     mut datasets: Vec<InMemDicomObject>,
-    tags: &[TermQuery],
+    term_tags: &[TermQuery],
 ) -> Result<Vec<InMemDicomObject>, Whatever> {
-    for t in tags {
+    for t in term_tags {
         let value = term_to_value(t.selector.last_tag(), &t.value)?;
 
         for ds in datasets.iter_mut() {
@@ -275,4 +276,14 @@ fn term_to_value(tag: Tag, str_value: &str) -> Result<PrimitiveValue, Whatever> 
         }
     };
     Ok(value)
+}
+
+fn merge_tags(file_tags: Vec<HeaderTag>, term_tags: Vec<TermQuery>) -> Vec<Tag> {
+    let mut tags = file_tags.iter().map(|t| t.tag).collect::<Vec<Tag>>();
+    for t in term_tags.iter() {
+        if !tags.contains(&t.selector.last_tag()) {
+            tags.push(t.selector.last_tag());
+        }
+    }
+    tags
 }

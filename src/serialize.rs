@@ -1,28 +1,17 @@
 use dicom_core::{DataDictionary, Tag};
-use dicom_dictionary_std::tags;
 use dicom_object::{StandardDataDictionary, mem::InMemDicomObject};
 use std::path::PathBuf;
 use tracing::info;
 
-use crate::TermQuery;
-
 pub fn write_responses_to_file(
     path: PathBuf,
     response_datasets: Vec<InMemDicomObject>,
-    other_tags: Vec<TermQuery>,
+    tag_queries: Vec<Tag>,
 ) -> Result<(), csv::Error> {
     let dict = StandardDataDictionary;
 
     let mut writer = csv::WriterBuilder::new().delimiter(b';').from_path(&path)?;
-    // let header_tags: Vec<Tag> = [tags::PATIENT_ID, tags::STUDY_INSTANCE_UID]
-    //     .into_iter()
-    //     .chain(other_tags.iter().map(|t| t.selector.last_tag()))
-    //     .collect();
-    let header_tags = other_tags
-        .iter()
-        .map(|t| t.selector.last_tag())
-        .collect::<Vec<Tag>>();
-    let header_serialized = header_tags
+    let header_serialized = tag_queries
         .iter()
         .map(|t| dict.by_tag(*t).unwrap().alias.to_string())
         .collect::<Vec<String>>();
@@ -30,7 +19,7 @@ pub fn write_responses_to_file(
 
     let resp_count = response_datasets.len();
     for ds in response_datasets {
-        let row: Vec<String> = header_tags
+        let row: Vec<String> = tag_queries
             .iter()
             .map(|t| {
                 ds.element(*t)

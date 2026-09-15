@@ -156,7 +156,8 @@ fn run() -> Result<(), Error> {
 
     let query_tags = parse_query_tags(query_tag)
         .whatever_context("Failed to parse query tags from command line")?;
-    let ds_queries = build_queries(in_study_file, &query_tags, &information_level, verbose)?;
+    let (ds_queries, tag_queries) =
+        build_queries(in_study_file, query_tags, &information_level, verbose)?;
 
     let mut client = ScuClient::new(
         (&request_mode).into(),
@@ -172,7 +173,7 @@ fn run() -> Result<(), Error> {
         RequestMode::Find { out_study_file } => {
             let responses = client.find_study(ds_queries)?;
             if !responses.is_empty() {
-                write_responses_to_file(out_study_file, responses, query_tags)
+                write_responses_to_file(out_study_file, responses, tag_queries)
                     .context(SerializeResponsesSnafu)
             } else {
                 info!("No responses returned");
