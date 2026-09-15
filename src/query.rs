@@ -21,15 +21,7 @@ pub fn build_queries(
     information_model: &InformationLevel,
     _verbose: bool,
 ) -> Result<(Vec<InMemDicomObject>, Vec<Tag>), Error> {
-    let (datasets, file_tags) = if let Some(file) = file {
-        datasets_from_file(file)?
-    } else {
-        vec![InMemDicomObject::from_element_iter([DataElement::new(
-            tags::STUDY_INSTANCE_UID,
-            VR::UI,
-            PrimitiveValue::Empty,
-        )])]
-    };
+    let (datasets, file_tags) = datasets_from_file(file)?;
     let mut datasets = override_tags(datasets, &term_tags)
         .whatever_context("Could not add tags from arguments to datasets")?;
 
@@ -53,7 +45,25 @@ pub fn build_queries(
     Ok((datasets, merged_tags))
 }
 
-fn datasets_from_file(file: PathBuf) -> Result<(Vec<InMemDicomObject>, Vec<HeaderTag>), Error> {
+fn datasets_from_file(
+    file: Option<PathBuf>,
+) -> Result<(Vec<InMemDicomObject>, Vec<HeaderTag>), Error> {
+    // return default Vec<InMemDicomObject> if no path given
+    let Some(file) = file else {
+        let study_uid_tag = HeaderTag {
+            tag: tags::STUDY_INSTANCE_UID,
+            vr: VR::UI,
+        };
+        return Ok((
+            vec![InMemDicomObject::from_element_iter([DataElement::new(
+                study_uid_tag.tag,
+                study_uid_tag.vr,
+                PrimitiveValue::Empty,
+            )])],
+            vec![study_uid_tag],
+        ));
+    };
+
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
         .delimiter(b';')
