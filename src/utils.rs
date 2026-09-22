@@ -24,10 +24,13 @@ pub fn parse_time(time_str: &str) -> Result<String, Whatever> {
     Ok(dicom_time.to_encoded())
 }
 
-pub fn format_time_range(time_str: &str) -> String {
-    time_str
-        .split("..")
-        .map(format_time)
-        .collect::<Vec<String>>()
-        .join("-")
+pub fn parse_datetime(datetime_str: &str) -> Result<String, Whatever> {
+    let datetime = NaiveDateTime::parse_from_str(datetime_str.trim(), "%Y-%m-%d %H:%M:%S%.f")
+        .with_whatever_context(|e| format!("Invalid datetime format: {e}"))?;
+    let dicom_dt = DicomDateTime::try_from(&datetime)
+        .whatever_context("Failed converting to DicomDateTime")?;
+    Ok(dicom_dt.to_encoded())
 }
+
+// TODO: possibly add parse_datetime_range()?
+// TODO: possibly add parse_time-range()? is it needed?

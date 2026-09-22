@@ -199,7 +199,6 @@ fn term_to_value(tag: Tag, str_value: &str) -> Result<PrimitiveValue, Whatever> 
         VR::AE
         | VR::AS
         | VR::CS
-        | VR::DT
         | VR::DS
         | VR::IS
         | VR::LO
@@ -217,6 +216,10 @@ fn term_to_value(tag: Tag, str_value: &str) -> Result<PrimitiveValue, Whatever> 
         }
         VR::TM => {
             let value = parse_time(str_value)?;
+            PrimitiveValue::from(value)
+        }
+        VR::DT => {
+            let value = parse_datetime(str_value)?;
             PrimitiveValue::from(value)
         }
         VR::AT => whatever!("Unsupported VR AT"),
@@ -288,4 +291,23 @@ fn merge_tags(file_tags: Vec<HeaderTag>, term_tags: Vec<TermQuery>) -> Vec<Tag> 
         }
     }
     tags
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_datetime() {
+        let datetime_str = "2020-01-02 05:30:20.123";
+        let parsed = term_to_value(tags::DATE_TIME, datetime_str).expect("Failed parsing");
+        assert_eq!(parsed, PrimitiveValue::from("20200102053020.123000"))
+    }
+
+    #[test]
+    fn parse_date_range() {
+        let date_range_str = "2020-01-02..2022-12-30";
+        let parsed = term_to_value(tags::DATE, date_range_str).expect("Failed parsing");
+        assert_eq!(parsed, PrimitiveValue::from("20200102-20221230"))
+    }
 }
