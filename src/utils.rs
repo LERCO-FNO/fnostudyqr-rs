@@ -1,17 +1,27 @@
-pub fn format_date(date_str: &str) -> String {
-    date_str.split('-').collect::<Vec<&str>>().join("")
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use dicom_core::value::{DicomDate, DicomDateTime, DicomTime};
+use snafu::{ResultExt, Whatever};
+
+pub fn parse_date(date_str: &str) -> Result<String, Whatever> {
+    let date = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d")
+        .with_whatever_context(|e| format!("Invalid date format: {e}"))?;
+    let dicom_dt = DicomDate::try_from(&date).whatever_context("Failed converting to DicomDate")?;
+    Ok(dicom_dt.to_encoded())
 }
 
-pub fn format_date_range(date_str: &str) -> String {
-    date_str
-        .split("..")
-        .map(format_date)
-        .collect::<Vec<String>>()
-        .join("-")
+pub fn parse_date_range(date_range_str: &str) -> Result<String, Whatever> {
+    match date_range_str.split_once("..") {
+        Some((start, end)) => Ok(format!("{}-{}", parse_date(start)?, parse_date(end)?)),
+        None => parse_date(date_range_str),
+    }
 }
 
-pub fn format_time(time_str: &str) -> String {
-    time_str.split(':').collect::<Vec<&str>>().join("")
+pub fn parse_time(time_str: &str) -> Result<String, Whatever> {
+    let time = NaiveTime::parse_from_str(time_str, "%H:%M:%S%.f")
+        .with_whatever_context(|e| format!("Invalid time format: {e}"))?;
+    let dicom_time = DicomTime::try_from(&time)
+        .with_whatever_context(|e| format!("Failed converting to DicomTime: {e}"))?;
+    Ok(dicom_time.to_encoded())
 }
 
 pub fn format_time_range(time_str: &str) -> String {

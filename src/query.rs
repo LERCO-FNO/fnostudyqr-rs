@@ -212,19 +212,11 @@ fn term_to_value(tag: Tag, str_value: &str) -> Result<PrimitiveValue, Whatever> 
         | VR::UR
         | VR::UT => PrimitiveValue::from(str_value),
         VR::DA => {
-            let value = if str_value.contains("..") {
-                format_date_range(str_value)
-            } else {
-                format_date(str_value)
-            };
+            let value = parse_date_range(str_value)?;
             PrimitiveValue::from(value)
         }
         VR::TM => {
-            let value = if str_value.contains("..") {
-                format_time_range(str_value)
-            } else {
-                format_time(str_value)
-            };
+            let value = parse_time(str_value)?;
             PrimitiveValue::from(value)
         }
         VR::AT => whatever!("Unsupported VR AT"),
