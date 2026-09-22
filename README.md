@@ -34,7 +34,7 @@ A CLI query/retrieve tool for a bulk of DICOM studies.
 
 ##### Input file specifications
 
-* Acceptable file format is `.csv` with semicolon `;` separator.
+* Required file format is `.csv` with semicolon `;` separator.
 Tags can be specified as keyword or hex value `(gggg,eeee)` with leading zeroes, ex. `PatientID`, `(0010,0020)` or `0010,0020`.
 * Find request may contain any DICOM tags up to the requested information level, ex: requesting PatientID and StudyDate at level `series` will match to all series per requested study. Value matching is case-sensitive.
 * Empty tag value will be overwritten by matching `<query-tag>` value.
