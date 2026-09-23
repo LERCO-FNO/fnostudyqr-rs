@@ -28,13 +28,13 @@ struct Args {
     #[arg(short = 'i', long, global = true)]
     in_study_file: Option<PathBuf>,
     /// Additional sequence of tags
-    #[arg(short = 't', long, global = true)]
+    #[arg(short = 'q', long, global = true)]
     query_tag: Vec<String>,
     /// Calling AE title
-    #[arg(long = "calling-ae-title", required = true)]
+    #[arg(short = 't', long = "calling-ae-title", required = true)]
     calling_ae_title: String,
     /// Called AE title
-    #[arg(long = "called-ae-title")]
+    #[arg(short = 'c', long = "called-ae-title")]
     called_ae_title: Option<String>,
     /// Information model for QueryRetrieveLevel tag
     #[arg(short = 'l', long, default_value = "study")]
