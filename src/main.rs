@@ -1,9 +1,8 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use snafu::{Report, Whatever, prelude::*};
-use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
-use tracing::{Level, error, info, warn};
+use tracing::{error, info, warn};
 
 mod client;
 mod query;
@@ -148,7 +147,11 @@ fn run() -> Result<(), Error> {
 
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(if verbose { Level::DEBUG } else { Level::INFO })
+            .with_max_level(if verbose {
+                tracing::Level::DEBUG
+            } else {
+                tracing::Level::INFO
+            })
             .finish(),
     )
     .unwrap_or_else(|e| {
@@ -243,7 +246,7 @@ struct StoreScpArgs {
     verbose: bool,
 }
 
-async fn run_async(store_args: StoreScpArgs) -> Result<Infallible, snafu::Whatever> {
+async fn run_async(store_args: StoreScpArgs) -> Result<std::convert::Infallible, snafu::Whatever> {
     std::fs::create_dir_all(&store_args.output_dir)
         .with_whatever_context(|err| format!("Could not create output directory: {err}"))?;
 
