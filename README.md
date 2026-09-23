@@ -7,10 +7,10 @@ A CLI query/retrieve tool for a bulk of DICOM studies.
 `fnostudyqr [OPTIONS] <ADDRESS> <COMMAND>`
 
 * `-i, --in-study-file <PATH>`: File path input list of studies to query/retrieve. If not given the tool fallbacks to query tags.
-* `-t, --query-tag <QUERY_TAG>`: Additional sequence of tags added to list of studies. Overwrites dataset tags from file if the tag has no value.
+* `-q, --query-tag <QUERY_TAG>`: Additional sequence of tags added to list of studies. Overwrites dataset tags from file if the tag has no value.
 * `-l, --information-level`: Information level to request at. One of `study (default)`, `patient` or `series`. Restricts at what level tags/objects can be queried/retrieved.
-* `--calling-ae-title <AE>`: Caller application entity title.
-* `--called-ae-title <AE>`: Called application entity title.
+* `-t, --calling-ae-title <AE>`: Caller application entity title.
+* `-c, --called-ae-title <AE>`: Called application entity title.
 
 ##### `find`-only options
 
@@ -18,7 +18,7 @@ A CLI query/retrieve tool for a bulk of DICOM studies.
 
 ##### Find example
 
-`fnostudyqr remote@address:port -i <STUDIES_FILE> --calling-ae-title <AE> -t StudyDescription find -o study_tags.csv`
+`fnostudyqr remote@address:port -i <STUDIES_FILE> --calling-ae-title <AE> -q StudyDescription find -o study_tags.csv`
 
 ##### `move`-only options
 
