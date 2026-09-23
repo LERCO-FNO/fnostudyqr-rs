@@ -20,7 +20,8 @@ use crate::store_async::run_store_async;
 #[derive(Debug, Parser)]
 #[command(version)]
 struct Args {
-    /// Socket address to SCP, ex: "127.0.0.1:1045"
+    /// Socket address to SCP, ex: "<AET>@127.0.0.1:1045".
+    /// Called AET prefix is optional, otherwise used with --called_ae_title=<AET>
     addr: String,
     /// Input file containing list of study tags.
     /// Minimum of PatientID and StudyDate are required
