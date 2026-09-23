@@ -60,8 +60,8 @@ enum InformationLevel {
 enum RequestMode {
     Find {
         /// Output file containing list of response study tags
-        #[arg(short = 'o', long, default_value = "response.csv")]
-        out_study_file: PathBuf,
+        #[arg(short = 'o', long)]
+        response_filepath: Option<PathBuf>,
     },
     Move {
         /// C-MOVE destination AE title
@@ -106,8 +106,9 @@ enum Error {
     #[snafu(display("Could not create datasets from file"))]
     DatasetsFromFile,
 
-    #[snafu(display("Could not serialize response tags to file"))]
-    SerializeResponses {
+    #[snafu(display("Could not write responses to file `{}`, {source}", path.display()))]
+    WriteResponses {
+        path: PathBuf,
         source: csv::Error,
     },
 
@@ -174,11 +175,10 @@ fn run() -> Result<(), Error> {
 
     info!("Requesting {} query", ds_queries.len());
     let res = match request_mode {
-        RequestMode::Find { out_study_file } => {
+        RequestMode::Find { response_filepath } => {
             let responses = client.find_study(ds_queries)?;
             if !responses.is_empty() {
-                write_responses_to_file(out_study_file, responses, tag_queries)
-                    .context(SerializeResponsesSnafu)
+                write_responses_to_file(response_filepath, responses, tag_queries)
             } else {
                 info!("No responses returned");
                 Err(Error::NoResponseToWrite)
