@@ -23,7 +23,7 @@ pub fn write_responses_to_file(
         .collect::<Vec<String>>();
     writer
         .serialize(header_serialized)
-        .whatever_context("Failed writing header row")?;
+        .whatever_context("Failed serializing header row")?;
 
     let resp_count = response_datasets.len();
     for ds in response_datasets {
