@@ -1,6 +1,8 @@
+use std::path::PathBuf;
+
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use dicom_core::value::{DicomDate, DicomDateTime, DicomTime};
-use snafu::{ResultExt, Whatever};
+use snafu::{ResultExt, Whatever, whatever};
 
 pub fn parse_date(date_str: &str) -> Result<String, Whatever> {
     let date = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d")
@@ -30,6 +32,18 @@ pub fn parse_datetime(datetime_str: &str) -> Result<String, Whatever> {
     let dicom_dt = DicomDateTime::try_from(&datetime)
         .whatever_context("Failed converting to DicomDateTime")?;
     Ok(dicom_dt.to_encoded())
+}
+
+pub fn validate_response_filepath(value: &str) -> Result<PathBuf, Whatever> {
+    let path = PathBuf::from(value);
+    if !path.exists() {
+        whatever!("Response path doesn't exist");
+    }
+    if path.is_dir() {
+        Ok(path.join("responses.csv"))
+    } else {
+        Ok(path)
+    }
 }
 
 // TODO: possibly add parse_datetime_range()?

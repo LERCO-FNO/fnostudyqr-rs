@@ -14,6 +14,7 @@ use crate::client::ScuClient;
 use crate::query::*;
 use crate::serialize::write_responses_to_file;
 use crate::store_async::run_store_async;
+use crate::utils::validate_response_filepath;
 
 /// DICOM C-FIND/C-MOVE application
 #[derive(Debug, Parser)]
@@ -60,8 +61,8 @@ enum InformationLevel {
 enum RequestMode {
     Find {
         /// Output file containing list of response study tags
-        #[arg(short = 'o', long)]
-        response_filepath: Option<PathBuf>,
+        #[arg(short = 'o', long, value_parser(validate_response_filepath))]
+        response_filepath: PathBuf,
     },
     Move {
         /// C-MOVE destination AE title
@@ -102,7 +103,6 @@ enum Error {
         source: csv::Error,
         file: PathBuf,
     },
-
     #[snafu(display("Could not create datasets from file"))]
     DatasetsFromFile,
 
@@ -177,6 +177,7 @@ fn run() -> Result<(), Error> {
     let res = match request_mode {
         RequestMode::Find { response_filepath } => {
             let responses = client.find_study(ds_queries)?;
+
             if !responses.is_empty() {
                 write_responses_to_file(response_filepath, responses, tag_queries)
             } else {
