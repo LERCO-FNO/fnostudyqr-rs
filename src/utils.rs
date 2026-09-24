@@ -1,8 +1,10 @@
-use std::path::PathBuf;
-
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use dicom_core::value::{DicomDate, DicomDateTime, DicomTime};
 use snafu::{ResultExt, Whatever, whatever};
+use std::{fs::File, path::PathBuf};
+use tracing::warn;
+
+use crate::FileExtension;
 
 pub fn parse_date(date_str: &str) -> Result<String, Whatever> {
     let date = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d")
@@ -39,10 +41,27 @@ pub fn validate_response_filepath(value: &str) -> Result<PathBuf, Whatever> {
     if !path.exists() {
         whatever!("Response path doesn't exist");
     }
+    Ok(path)
+}
+
+pub fn construct_filepath(path: PathBuf, extension: FileExtension) -> PathBuf {
+    let ext = match extension {
+        FileExtension::Csv => "csv",
+        FileExtension::Json => "json",
+    };
     if path.is_dir() {
-        Ok(path.join("responses.csv"))
+        path.join("response").with_extension(ext)
     } else {
-        Ok(path)
+        if let Some(extension) = path.extension()
+            && (extension.to_os_string() != ext)
+        {
+            warn!(
+                "--response-path extension {} different from --response-extension {}",
+                extension.display(),
+                ext
+            )
+        }
+        path
     }
 }
 

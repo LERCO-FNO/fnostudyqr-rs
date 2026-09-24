@@ -12,9 +12,9 @@ mod utils;
 
 use crate::client::ScuClient;
 use crate::query::*;
-use crate::serialize::write_responses_to_file;
+use crate::serialize::responses_to_csv;
 use crate::store_async::run_store_async;
-use crate::utils::validate_response_filepath;
+use crate::utils::{construct_filepath, validate_response_filepath};
 
 /// DICOM C-FIND/C-MOVE application
 #[derive(Debug, Parser)]
@@ -75,6 +75,12 @@ enum RequestMode {
         #[arg(short = 'o', long, default_value = "./output")]
         output_dir: PathBuf,
     },
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+enum FileExtension {
+    Csv,
+    Json,
 }
 
 #[derive(Debug, Snafu)]
