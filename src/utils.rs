@@ -1,7 +1,7 @@
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use dicom_core::value::{DicomDate, DicomDateTime, DicomTime};
 use snafu::{ResultExt, Whatever, whatever};
-use std::{fs::File, path::PathBuf};
+use std::path::PathBuf;
 use tracing::warn;
 
 use crate::FileExtension;
