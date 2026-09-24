@@ -12,7 +12,7 @@ mod utils;
 
 use crate::client::ScuClient;
 use crate::query::*;
-use crate::serialize::responses_to_csv;
+use crate::serialize::serialize_responses;
 use crate::store_async::run_store_async;
 use crate::utils::{construct_filepath, validate_response_filepath};
 
@@ -39,6 +39,12 @@ struct Args {
     /// Information model for QueryRetrieveLevel tag
     #[arg(short = 'l', long, default_value = "study")]
     information_level: InformationLevel,
+    /// Path to file/directory to write response tags
+    #[arg(short = 'r', long, default_value = "./", value_parser = validate_response_filepath)]
+    response_path: PathBuf,
+    /// Response file extension
+    #[arg(short = 'e', long, default_value = "csv")]
+    response_extension: FileExtension,
     /// Verbose mode
     #[arg(short, long, global = true)]
     verbose: bool,
@@ -59,11 +65,7 @@ enum InformationLevel {
 
 #[derive(Subcommand, Debug)]
 enum RequestMode {
-    Find {
-        /// Output file containing list of response study tags
-        #[arg(short = 'o', long, value_parser(validate_response_filepath))]
-        response_filepath: PathBuf,
-    },
+    Find,
     Move {
         /// C-MOVE destination AE title
         #[arg(long = "move-destination", required = true)]
@@ -77,7 +79,7 @@ enum RequestMode {
     },
 }
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum)]
 enum FileExtension {
     Csv,
     Json,
@@ -119,10 +121,16 @@ enum Error {
     },
 
     NoPresentationContext,
+
     UnsupportedTransferSyntax,
+
     UnexpctedSCPResponse,
+
+    NoResponsesToWrite,
+
     #[snafu(display("No response returned"))]
     NoResponseToWrite,
+
     #[snafu(whatever, display("{}", message))]
     Other {
         message: String,
@@ -146,9 +154,9 @@ fn run() -> Result<(), Error> {
         query_tag,
         calling_ae_title,
         called_ae_title,
-        // out_study_file,
         information_level,
-        // max_pdu_length,
+        response_path,
+        response_extension,
         verbose,
     } = Args::parse();
 
@@ -181,16 +189,7 @@ fn run() -> Result<(), Error> {
 
     info!("Requesting {} query", ds_queries.len());
     let res = match request_mode {
-        RequestMode::Find { response_filepath } => {
-            let responses = client.find_study(ds_queries)?;
-
-            if !responses.is_empty() {
-                write_responses_to_file(response_filepath, responses, tag_queries)
-            } else {
-                info!("No responses returned");
-                Err(Error::NoResponseToWrite)
-            }
-        }
+        RequestMode::Find => client.find_study(ds_queries),
         RequestMode::Move {
             move_destination,
             store_port,
@@ -214,19 +213,25 @@ fn run() -> Result<(), Error> {
                 });
             });
 
-            let _ = client.move_study(ds_queries, &move_destination);
+            let res = client.move_study(ds_queries, &move_destination);
             handle.abort();
-            Ok(())
+            res
         }
     };
 
-    if res.is_err() {
-        error!("{res:?}");
-    }
-
     client.release_assoc();
 
-    Ok(())
+    // FIXME: finish response writing here, thus support writing responses for C-FIND and C-MOVE
+    // - more in serialize.rs
+    if let Ok(responses) = res {
+        let response_path = construct_filepath(response_path, response_extension);
+        serialize_responses(response_path, responses, tag_queries, response_extension)
+    } else if let Err(Error::NoResponsesToWrite) = res {
+        Ok(()) // FIXME: check this in debugger, try to come up with test error
+    } else {
+        error!("{res:?}"); // FIXME: check this in debugger, try to come up with test error
+        Ok(())
+    }
 }
 
 fn parse_query_tags(query_tags: Vec<String>) -> Result<Vec<TermQuery>, Whatever> {

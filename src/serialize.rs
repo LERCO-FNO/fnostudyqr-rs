@@ -2,53 +2,94 @@ use dicom_core::{DataDictionary, DataElement, Tag};
 use dicom_object::{StandardDataDictionary, mem::InMemDicomObject};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
+use std::fs::File;
 use std::path::PathBuf;
-use tracing::info;
+use tracing::{info, warn};
 
 use dicom_core::VR::*;
 
-use crate::WriteResponsesSnafu;
+use crate::Error;
+use crate::{FileExtension, WriteResponsesSnafu};
 
-pub fn write_responses_to_file(
+pub fn serialize_responses(
     path: PathBuf,
     response_datasets: Vec<InMemDicomObject>,
     tag_queries: Vec<Tag>,
-) -> Result<(), crate::Error> {
+    file_extension: FileExtension,
+) -> Result<(), Error> {
     let dict = StandardDataDictionary;
+    let header: Vec<String> = tag_queries
+        .iter()
+        .map(|t| {
+            dict.by_tag(*t)
+                .map(|e| e.alias.to_string())
+                .unwrap_or_else(|| {
+                    // fallback for possibly missing tag not in current version of StandardDataDictionary or is private tag
+                    warn!("Tag {t}");
+                    t.to_string()
+                })
+        })
+        .collect::<Vec<String>>();
 
+    let values = response_datasets
+        .iter()
+        .map(|ds| extract_tag_values(&tag_queries, ds))
+        .collect::<Vec<Vec<ValueType>>>();
+
+    let data = TagData { header, values };
+
+    match file_extension {
+        FileExtension::Csv => responses_to_csv(path, data),
+        FileExtension::Json => responses_to_json(path, data),
+    }
+}
+
+pub fn responses_to_json(path: PathBuf, data: TagData) -> Result<(), Error> {
+    // FIXME: proper error handling
+    let writer = File::create(path).unwrap();
+    /*
+    FIXME:
+    - proper error handling
+    - serialize without ValueType
+    instead of:
+      "values": [
+        [
+          {
+            "Text": "..."
+          },
+          {
+            "Text": "..."
+          }
+        ],
+    ..., ]
+
+    do this:
+      "values": [
+        ["...", "..."],
+        ...,
+    ]
+    */
+    let res = serde_json::to_writer_pretty(writer, &data);
+    println!("{res:?}");
+    Ok(())
+}
+
+pub fn responses_to_csv(path: PathBuf, data: TagData) -> Result<(), Error> {
     let mut writer = csv::WriterBuilder::new()
         .delimiter(b';')
         .from_path(&path)
         .context(WriteResponsesSnafu { path: path.clone() })?;
-    let header_serialized = tag_queries
-        .iter()
-        .map(|t| dict.by_tag(*t).unwrap().alias.to_string())
-        .collect::<Vec<String>>();
     writer
-        .serialize(header_serialized)
+        .serialize(data.header)
         .whatever_context("Failed serializing header row")?;
 
-    let resp_count = response_datasets.len();
-    for ds in response_datasets {
-        let row: Vec<String> = tag_queries
-            .iter()
-            .map(|t| {
-                ds.element(*t)
-                    .ok()
-                    .and_then(|el| el.to_str().ok())
-                    .map(|cow| cow.into_owned())
-                    .unwrap_or_default()
-            })
-            .collect();
-
-        writer
-            .serialize(row)
-            .whatever_context("Failed serializing dataset")?;
+    for row in data.values {
+        let res = writer.serialize(row);
+        println!("{res:?}");
     }
     writer
         .flush()
         .whatever_context("Failed to flush response file")?;
-    info!("Written {resp_count} responses to `{}`", path.display());
     Ok(())
 }
 
@@ -63,15 +104,9 @@ enum ValueType {
 }
 
 #[derive(Serialize)]
-struct TagData {
+pub(crate) struct TagData {
     header: Vec<String>,
     values: Vec<Vec<ValueType>>,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum TagType {
-    Keyword,
-    Hex,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -86,21 +121,6 @@ enum DicomValueParseError {
     InvalidDateTime,
     InvalidString,
     InvalidAgeString,
-}
-
-fn parse_age(element: &DataElement<InMemDicomObject>) -> Option<u32> {
-    element.to_str().ok().and_then(|s| {
-        let trimmed = s.trim();
-
-        if trimmed.len() != 4 {
-            return None;
-        }
-
-        // split at 4th character (3rd index)
-        let (num_part, _) = trimmed.split_at(3);
-
-        num_part.parse::<u32>().ok()
-    })
 }
 
 fn extract_tag_values(tags: &[Tag], ds: &InMemDicomObject) -> Vec<ValueType> {
@@ -177,7 +197,6 @@ mod tests {
         ];
 
         let dict = StandardDataDictionary;
-        let tag_type = TagType::Keyword;
 
         let query_tags = [
             tags::PATIENT_NAME,
@@ -187,30 +206,12 @@ mod tests {
             tags::PATIENT_AGE,
         ];
 
-        let header_row: Vec<String> = query_tags
-            .iter()
-            .map(|t| match tag_type {
-                TagType::Keyword => dict
-                    .by_tag(*t)
-                    .map(|e| e.alias.to_string())
-                    .unwrap_or_else(|| t.to_string()), // fallback for possibly missing tag not in
-                // current version of StandardDataDictionary or is private tag
-                TagType::Hex => t.to_string(),
-            })
-            .collect::<Vec<String>>();
-
         // let ser = dicom_json::to_string(&ds);
-        let tag_values = datasets
-            .iter()
-            .map(|ds| extract_tag_values(&query_tags, ds))
-            .collect::<Vec<Vec<ValueType>>>();
-        println!("{header_row:?}");
-        println!("{tag_values:?}");
 
-        let json = serde_json::to_string_pretty(&TagData {
-            header: header_row,
-            values: tag_values,
-        });
-        println!("{json:?}");
+        // let json = serde_json::to_string_pretty(&TagData {
+        //     header
+        //     values,
+        // });
+        // println!("{json:?}");
     }
 }
