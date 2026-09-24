@@ -14,6 +14,7 @@ use crate::client::ScuClient;
 use crate::query::*;
 use crate::serialize::write_responses_to_file;
 use crate::store_async::run_store_async;
+use crate::utils::validate_response_filepath;
 
 /// DICOM C-FIND/C-MOVE application
 #[derive(Debug, Parser)]
@@ -60,8 +61,8 @@ enum InformationLevel {
 enum RequestMode {
     Find {
         /// Output file containing list of response study tags
-        #[arg(short = 'o', long, default_value = "response.csv")]
-        out_study_file: PathBuf,
+        #[arg(short = 'o', long, value_parser(validate_response_filepath))]
+        response_filepath: PathBuf,
     },
     Move {
         /// C-MOVE destination AE title
@@ -102,12 +103,12 @@ enum Error {
         source: csv::Error,
         file: PathBuf,
     },
-
     #[snafu(display("Could not create datasets from file"))]
     DatasetsFromFile,
 
-    #[snafu(display("Could not serialize response tags to file"))]
-    SerializeResponses {
+    #[snafu(display("Could not write responses to file `{}`, {source}", path.display()))]
+    WriteResponses {
+        path: PathBuf,
         source: csv::Error,
     },
 
@@ -174,11 +175,11 @@ fn run() -> Result<(), Error> {
 
     info!("Requesting {} query", ds_queries.len());
     let res = match request_mode {
-        RequestMode::Find { out_study_file } => {
+        RequestMode::Find { response_filepath } => {
             let responses = client.find_study(ds_queries)?;
+
             if !responses.is_empty() {
-                write_responses_to_file(out_study_file, responses, tag_queries)
-                    .context(SerializeResponsesSnafu)
+                write_responses_to_file(response_filepath, responses, tag_queries)
             } else {
                 info!("No responses returned");
                 Err(Error::NoResponseToWrite)
