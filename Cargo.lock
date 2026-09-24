@@ -508,6 +508,8 @@ dependencies = [
  "dicom-object",
  "dicom-transfer-syntax-registry",
  "dicom-ul",
+ "serde",
+ "serde_json",
  "snafu",
  "tokio",
  "tracing",
