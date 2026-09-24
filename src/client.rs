@@ -274,6 +274,10 @@ impl ScuClient {
             }
         }
 
+        if responses.is_empty() {
+            return Err(Error::NoResponsesToWrite);
+        }
+
         Ok(responses)
     }
 
@@ -446,6 +450,10 @@ impl ScuClient {
                     }
                 }
             }
+        }
+
+        if responses.is_empty() {
+            return Err(Error::NoResponsesToWrite);
         }
 
         Ok(responses)
