@@ -1,15 +1,16 @@
 use dicom_core::{DataDictionary, DataElement, Tag};
 use dicom_object::{StandardDataDictionary, mem::InMemDicomObject};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use snafu::ResultExt;
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
 use dicom_core::VR::*;
 
-use crate::Error;
-use crate::{FileExtension, WriteResponsesSnafu};
+use crate::FileExtension;
+use crate::{CreateOutputFileSnafu, Error, SerializeCsvSnafu, SerializeJsonSnafu};
 
 pub fn serialize_responses(
     path: PathBuf,
@@ -24,8 +25,8 @@ pub fn serialize_responses(
             dict.by_tag(*t)
                 .map(|e| e.alias.to_string())
                 .unwrap_or_else(|| {
-                    // fallback for possibly missing tag not in current version of StandardDataDictionary or is private tag
-                    warn!("Tag {t}");
+                    // fallback for tag possibly missing in current version of StandardDataDictionary or is private tag
+                    warn!("Tag {t} not found in StandardDataDictionary or is PrivateTag");
                     t.to_string()
                 })
         })
@@ -39,61 +40,62 @@ pub fn serialize_responses(
     let data = TagData { header, values };
 
     match file_extension {
-        FileExtension::Csv => responses_to_csv(path, data),
-        FileExtension::Json => responses_to_json(path, data),
-    }
-}
+        FileExtension::Csv => write_to_csv(&path, data),
+        FileExtension::Json => write_to_json(&path, data),
+    }?;
 
-pub fn responses_to_json(path: PathBuf, data: TagData) -> Result<(), Error> {
-    // FIXME: proper error handling
-    let writer = File::create(path).unwrap();
-    /*
-    FIXME:
-    - proper error handling
-    - serialize without ValueType
-    instead of:
-      "values": [
-        [
-          {
-            "Text": "..."
-          },
-          {
-            "Text": "..."
-          }
-        ],
-    ..., ]
-
-    do this:
-      "values": [
-        ["...", "..."],
-        ...,
-    ]
-    */
-    let res = serde_json::to_writer_pretty(writer, &data);
-    println!("{res:?}");
+    info!(
+        "Wrote {} responses to {}",
+        response_datasets.len(),
+        path.display()
+    );
     Ok(())
 }
 
-pub fn responses_to_csv(path: PathBuf, data: TagData) -> Result<(), Error> {
+fn write_to_json(path: &Path, data: TagData) -> Result<(), Error> {
+    let writer = File::create(path).context(CreateOutputFileSnafu { path })?;
+    // reformat to json specific data structure to achieve:
+    // [
+    //  [{"key1", "val", "key2", "val", ...}],
+    //  [...],
+    // ]
+    let TagData { header, values } = data;
+    let data_reformatted: Vec<Map<String, Value>> = values
+        .into_iter()
+        .map(|row| {
+            header
+                .iter()
+                .cloned()
+                .zip(row)
+                .map(|(key, val)| {
+                    let val = serde_json::to_value(val)
+                        .expect("ValueType is a simple enum and always serializes");
+                    (key, val)
+                })
+                .collect()
+        })
+        .collect();
+    serde_json::to_writer_pretty(writer, &data_reformatted).context(SerializeJsonSnafu)
+}
+
+fn write_to_csv(path: &Path, data: TagData) -> Result<(), Error> {
     let mut writer = csv::WriterBuilder::new()
         .delimiter(b';')
-        .from_path(&path)
-        .context(WriteResponsesSnafu { path: path.clone() })?;
-    writer
-        .serialize(data.header)
-        .whatever_context("Failed serializing header row")?;
+        .from_path(path)
+        .map_err(std::io::Error::from)
+        .context(CreateOutputFileSnafu { path })?;
 
-    for row in data.values {
-        let res = writer.serialize(row);
-        println!("{res:?}");
+    let TagData { header, values } = data;
+    writer.write_record(&header).context(SerializeCsvSnafu)?;
+    for row in values {
+        let formatted: Vec<String> = row.iter().map(ToString::to_string).collect();
+        writer.write_record(&formatted).context(SerializeCsvSnafu)?;
     }
-    writer
-        .flush()
-        .whatever_context("Failed to flush response file")?;
     Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
 enum ValueType {
     SignedInteger(i32),
     UnsignedInteger(u32),
@@ -103,7 +105,18 @@ enum ValueType {
     Error(DicomValueParseError),
 }
 
-#[derive(Serialize)]
+impl std::fmt::Display for ValueType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValueType::SignedInteger(v) => write!(f, "{v}"),
+            ValueType::UnsignedInteger(v) => write!(f, "{v}"),
+            ValueType::Float(v) => write!(f, "{v}"),
+            ValueType::Text(s) | ValueType::AgeString(s) => write!(f, "{s}"),
+            ValueType::Error(e) => write!(f, "{e:?}"), // or a Display impl on DicomValueParseError
+        }
+    }
+}
+
 pub(crate) struct TagData {
     header: Vec<String>,
     values: Vec<Vec<ValueType>>,

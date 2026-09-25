@@ -290,6 +290,7 @@ fn merge_tags(file_tags: Vec<HeaderTag>, term_tags: Vec<TermQuery>) -> Vec<Tag> 
             tags.push(t.selector.last_tag());
         }
     }
+    tags.sort();
     tags
 }
 
@@ -310,4 +311,7 @@ mod tests {
         let parsed = term_to_value(tags::DATE, date_range_str).expect("Failed parsing");
         assert_eq!(parsed, PrimitiveValue::from("20200102-20221230"))
     }
+
+    #[test]
+    fn tags_merged_sorted() {}
 }

@@ -40,11 +40,11 @@ struct Args {
     #[arg(short = 'l', long, default_value = "study")]
     information_level: InformationLevel,
     /// Path to file/directory to write response tags
-    #[arg(short = 'r', long, default_value = "./", value_parser = validate_response_filepath)]
-    response_path: PathBuf,
+    #[arg(short = 'f', long, /*default_value = "./",*/ value_parser = validate_response_filepath)]
+    out_response_filepath: Option<PathBuf>,
     /// Response file extension
     #[arg(short = 'e', long, default_value = "csv")]
-    response_extension: FileExtension,
+    file_extension: FileExtension,
     /// Verbose mode
     #[arg(short, long, global = true)]
     verbose: bool,
@@ -67,9 +67,9 @@ enum InformationLevel {
 enum RequestMode {
     Find,
     Move {
-        /// C-MOVE destination AE title
-        #[arg(long = "move-destination", required = true)]
-        move_destination: String,
+        /// C-MOVE destination AE title. Defaults to --calling-ae-title
+        #[arg(long = "move-destination")]
+        move_destination: Option<String>,
         /// Store port to listen on
         #[arg(short = 'p', long)]
         store_port: u16,
@@ -131,6 +131,19 @@ enum Error {
     #[snafu(display("No response returned"))]
     NoResponseToWrite,
 
+    #[snafu(display("Could not create output file `{}`, {source}", path.display()))]
+    CreateOutputFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[snafu(display("{source}"))]
+    SerializeJson {
+        source: serde_json::Error,
+    },
+    #[snafu(display("{source}"))]
+    SerializeCsv {
+        source: csv::Error,
+    },
     #[snafu(whatever, display("{}", message))]
     Other {
         message: String,
@@ -155,8 +168,8 @@ fn run() -> Result<(), Error> {
         calling_ae_title,
         called_ae_title,
         information_level,
-        response_path,
-        response_extension,
+        out_response_filepath,
+        file_extension,
         verbose,
     } = Args::parse();
 
@@ -188,7 +201,7 @@ fn run() -> Result<(), Error> {
     )?;
 
     info!("Requesting {} query", ds_queries.len());
-    let res = match request_mode {
+    let query_result = match request_mode {
         RequestMode::Find => client.find_study(ds_queries),
         RequestMode::Move {
             move_destination,
@@ -200,8 +213,8 @@ fn run() -> Result<(), Error> {
                 .build()
                 .unwrap();
             let store_args = StoreScpArgs {
-                calling_ae_title, // was calling_ae_title.clone()
-                output_dir,       // was output_dir.clone()
+                calling_ae_title: calling_ae_title.clone(), // was calling_ae_title.clone()
+                output_dir,                                 // was output_dir.clone()
                 store_port,
                 verbose,
             };
@@ -213,6 +226,7 @@ fn run() -> Result<(), Error> {
                 });
             });
 
+            let move_destination = move_destination.unwrap_or(calling_ae_title);
             let res = client.move_study(ds_queries, &move_destination);
             handle.abort();
             res
@@ -221,17 +235,26 @@ fn run() -> Result<(), Error> {
 
     client.release_assoc();
 
-    // FIXME: finish response writing here, thus support writing responses for C-FIND and C-MOVE
-    // - more in serialize.rs
-    if let Ok(responses) = res {
-        let response_path = construct_filepath(response_path, response_extension);
-        serialize_responses(response_path, responses, tag_queries, response_extension)
-    } else if let Err(Error::NoResponsesToWrite) = res {
-        Ok(()) // FIXME: check this in debugger, try to come up with test error
+    let responses = match query_result {
+        Ok(responses) => responses,
+        Err(Error::NoResponsesToWrite) => {
+            info!("No responses to write due to no matches");
+            return Ok(());
+        }
+        Err(err) => {
+            error!("{err}");
+            return Ok(());
+        }
+    };
+
+    let out_file_path = if let Some(out_file_path) = out_response_filepath {
+        construct_filepath(out_file_path, file_extension)
     } else {
-        error!("{res:?}"); // FIXME: check this in debugger, try to come up with test error
-        Ok(())
-    }
+        info!("Responses received but no output path given, skipping write");
+        return Ok(());
+    };
+
+    serialize_responses(out_file_path, responses, tag_queries, file_extension)
 }
 
 fn parse_query_tags(query_tags: Vec<String>) -> Result<Vec<TermQuery>, Whatever> {

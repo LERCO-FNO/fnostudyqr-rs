@@ -39,7 +39,7 @@ pub fn parse_datetime(datetime_str: &str) -> Result<String, Whatever> {
 pub fn validate_response_filepath(value: &str) -> Result<PathBuf, Whatever> {
     let path = PathBuf::from(value);
     if !path.exists() {
-        whatever!("Response path doesn't exist");
+        whatever!("Output response path doesn't exist");
     }
     Ok(path)
 }

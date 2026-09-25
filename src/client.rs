@@ -25,7 +25,7 @@ pub enum Mode {
 impl From<&RequestMode> for Mode {
     fn from(value: &RequestMode) -> Self {
         match value {
-            RequestMode::Find { .. } => Mode::Find,
+            RequestMode::Find => Mode::Find,
             RequestMode::Move { .. } => Mode::Move,
         }
     }
