@@ -97,12 +97,12 @@ enum Error {
         source: dicom_object::ReadError,
     },
 
-    // Could not read DICOM command
+    /// Could not read DICOM command
     ReadCommand {
         source: dicom_object::ReadError,
     },
 
-    // Could not dump DICOM output
+    /// Could not dump DICOM output
     DumpOutput {
         source: std::io::Error,
     },
@@ -113,12 +113,6 @@ enum Error {
     },
     #[snafu(display("Could not create datasets from file"))]
     DatasetsFromFile,
-
-    #[snafu(display("Could not write responses to file `{}`, {source}", path.display()))]
-    WriteResponses {
-        path: PathBuf,
-        source: csv::Error,
-    },
 
     NoPresentationContext,
 
