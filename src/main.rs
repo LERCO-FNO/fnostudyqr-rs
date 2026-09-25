@@ -227,6 +227,17 @@ fn run() -> Result<(), Error> {
         }
     };
 
+    // BUG: putting wrong AE title doesn't release/abort association
+
+    /* BUG: finished move request doesn't hangs on opened association and doesn't reach .release_assoc()
+        - must be bug in move_study after receiving last match/response
+        - 2026-09-25T12:27:23.946347Z DEBUG fnostudyqr::store_async: scu ----> scp: ReleaseRQ
+        2026-09-25T12:27:23.946442Z  INFO fnostudyqr::store_async: Released association with ORTHANC
+        2026-09-25T12:27:23.946471Z  INFO fnostudyqr::store_async: Dropping connection with ORTHANC (127.0.0.1:46250)
+        2026-09-25T12:27:53.975346Z ERROR fnostudyqr::client: Unexpected SCP response: AbortRQ { source: ServiceUser }
+        2026-09-25T12:28:24.006826Z  INFO fnostudyqr::client: Association released
+        2026-09-25T12:28:24.006986Z ERROR fnostudyqr: UnexpctedSCPResponse
+    */
     client.release_assoc();
 
     let responses = match query_result {
