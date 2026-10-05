@@ -1,5 +1,6 @@
 # editor folders
 /.zed
+/.gram
 
 /target
 /output
