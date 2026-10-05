@@ -25,7 +25,7 @@ pub enum Mode {
 impl From<&RequestMode> for Mode {
     fn from(value: &RequestMode) -> Self {
         match value {
-            RequestMode::Find => Mode::Find,
+            RequestMode::Find { .. } => Mode::Find,
             RequestMode::Move { .. } => Mode::Move,
         }
     }
@@ -274,10 +274,6 @@ impl ScuClient {
             }
         }
 
-        if responses.is_empty() {
-            return Err(Error::NoResponsesToWrite);
-        }
-
         Ok(responses)
     }
 
@@ -285,8 +281,8 @@ impl ScuClient {
         &mut self,
         ds_queries: Vec<InMemDicomObject>,
         move_destination: &str,
-    ) -> Result<Vec<InMemDicomObject>, Error> {
-        let mut responses: Vec<InMemDicomObject> = Vec::new();
+    ) -> Result<(), Error> {
+        // let mut responses: Vec<InMemDicomObject> = Vec::new();
 
         let ds_len = ds_queries.len() as u16;
         for (ds, index) in ds_queries.into_iter().zip(1..=ds_len) {
@@ -452,11 +448,7 @@ impl ScuClient {
             }
         }
 
-        if responses.is_empty() {
-            return Err(Error::NoResponsesToWrite);
-        }
-
-        Ok(responses)
+        Ok(())
     }
 
     pub fn release_assoc(self) {
