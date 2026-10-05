@@ -118,7 +118,7 @@ enum Error {
 
     UnsupportedTransferSyntax,
 
-    UnexpctedSCPResponse,
+    UnexpectedSCPResponse,
 
     NoResponsesToWrite,
 

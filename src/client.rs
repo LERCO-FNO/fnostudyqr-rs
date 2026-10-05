@@ -268,7 +268,7 @@ impl ScuClient {
                     | pdu @ Pdu::ReleaseRP
                     | pdu @ Pdu::AbortRQ { .. } => {
                         error!("Unexpected SCP response: {:?}", pdu);
-                        return Err(Error::UnexpctedSCPResponse);
+                        return Err(Error::UnexpectedSCPResponse);
                     }
                 }
             }
@@ -446,7 +446,7 @@ impl ScuClient {
                     | pdu @ Pdu::ReleaseRP
                     | pdu @ Pdu::AbortRQ { .. } => {
                         error!("Unexpected SCP response: {:?}", pdu);
-                        return Err(Error::UnexpctedSCPResponse);
+                        return Err(Error::UnexpectedSCPResponse);
                     }
                 }
             }
