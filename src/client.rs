@@ -329,7 +329,7 @@ impl ScuClient {
                 debug!("Awaiting response...");
             }
 
-            let mut i = 0;
+            let mut _i = 0;
             // let mut success = false;
             loop {
                 let rsp_pdu = self
@@ -357,26 +357,18 @@ impl ScuClient {
                         )
                         .context(ReadCommandSnafu)?;
 
-                        if self.verbose {
-                            eprint!("Match #{i} response command:");
-                            DumpOptions::new()
-                                .dump_object_to(stderr(), &cmd_obj)
-                                .context(DumpOutputSnafu)?;
-                        }
-
                         let status = cmd_obj
                             .get(tags::STATUS)
                             .whatever_context("Status code from response is missing")?
                             .to_int::<u16>()
                             .whatever_context("Failed to read status code")?;
-
                         if status == 0 {
                             if self.verbose {
                                 debug!("Matching is complete");
                             }
-                            if i == 0 {
-                                info!("No results matching query");
-                            }
+                            // if i == 0 {
+                            //     info!("No results matching query");
+                            // }
                             // success = true;
                             break;
                         } else if status == 0xFF00 || status == 0xFF01 {
