@@ -25,7 +25,7 @@ pub enum Mode {
 impl From<&RequestMode> for Mode {
     fn from(value: &RequestMode) -> Self {
         match value {
-            RequestMode::Find => Mode::Find,
+            RequestMode::Find { .. } => Mode::Find,
             RequestMode::Move { .. } => Mode::Move,
         }
     }
@@ -268,14 +268,10 @@ impl ScuClient {
                     | pdu @ Pdu::ReleaseRP
                     | pdu @ Pdu::AbortRQ { .. } => {
                         error!("Unexpected SCP response: {:?}", pdu);
-                        return Err(Error::UnexpctedSCPResponse);
+                        return Err(Error::UnexpectedSCPResponse);
                     }
                 }
             }
-        }
-
-        if responses.is_empty() {
-            return Err(Error::NoResponsesToWrite);
         }
 
         Ok(responses)
@@ -285,8 +281,8 @@ impl ScuClient {
         &mut self,
         ds_queries: Vec<InMemDicomObject>,
         move_destination: &str,
-    ) -> Result<Vec<InMemDicomObject>, Error> {
-        let mut responses: Vec<InMemDicomObject> = Vec::new();
+    ) -> Result<(), Error> {
+        // let mut responses: Vec<InMemDicomObject> = Vec::new();
 
         let ds_len = ds_queries.len() as u16;
         for (ds, index) in ds_queries.into_iter().zip(1..=ds_len) {
@@ -333,7 +329,7 @@ impl ScuClient {
                 debug!("Awaiting response...");
             }
 
-            let mut i = 0;
+            let mut _i = 0;
             // let mut success = false;
             loop {
                 let rsp_pdu = self
@@ -361,26 +357,18 @@ impl ScuClient {
                         )
                         .context(ReadCommandSnafu)?;
 
-                        if self.verbose {
-                            eprint!("Match #{i} response command:");
-                            DumpOptions::new()
-                                .dump_object_to(stderr(), &cmd_obj)
-                                .context(DumpOutputSnafu)?;
-                        }
-
                         let status = cmd_obj
                             .get(tags::STATUS)
                             .whatever_context("Status code from response is missing")?
                             .to_int::<u16>()
                             .whatever_context("Failed to read status code")?;
-
                         if status == 0 {
                             if self.verbose {
                                 debug!("Matching is complete");
                             }
-                            if i == 0 {
-                                info!("No results matching query");
-                            }
+                            // if i == 0 {
+                            //     info!("No results matching query");
+                            // }
                             // success = true;
                             break;
                         } else if status == 0xFF00 || status == 0xFF01 {
@@ -388,40 +376,7 @@ impl ScuClient {
                                 debug!("Operation pending: 0x{status:X}");
                             }
 
-                            let dcm_obj = if let Some(second_pdata) = data.get(1) {
-                                InMemDicomObject::read_dataset_with_ts(
-                                    second_pdata.data.as_slice(),
-                                    self.ts,
-                                )
-                                .whatever_context("Could not read response data set")?
-                            } else {
-                                let mut rsp = self.assoc.receive_pdata();
-                                let mut response_data = Vec::new();
-                                rsp.read_to_end(&mut response_data)
-                                    .whatever_context("Failed to read response data")?;
-                                InMemDicomObject::read_dataset_with_ts(&response_data[..], self.ts)
-                                    .whatever_context("Could not read response data set")?
-                            };
-
-                            /*println!(
-                                "------------------------ Match #{i} ------------------------"
-                            );
-                            DumpOptions::new()
-                                .dump_object(&dcm_obj)
-                                .context(DumpOutputSnafu)?;*/
-
-                            let status = dcm_obj
-                                .get(tags::STATUS)
-                                .and_then(|el| el.to_int::<u16>().ok());
-                            responses.push(dcm_obj);
-
-                            if status == Some(0) {
-                                if self.verbose {
-                                    debug!("Matching is complete");
-                                }
-                                break;
-                            }
-                            i += 1;
+                            _i += 1;
                         } else {
                             let msg = match status {
                                 0xa701 => "Out of resources (number of matches)",
@@ -446,17 +401,13 @@ impl ScuClient {
                     | pdu @ Pdu::ReleaseRP
                     | pdu @ Pdu::AbortRQ { .. } => {
                         error!("Unexpected SCP response: {:?}", pdu);
-                        return Err(Error::UnexpctedSCPResponse);
+                        return Err(Error::UnexpectedSCPResponse);
                     }
                 }
             }
         }
 
-        if responses.is_empty() {
-            return Err(Error::NoResponsesToWrite);
-        }
-
-        Ok(responses)
+        Ok(())
     }
 
     pub fn release_assoc(self) {

@@ -25,7 +25,7 @@ struct Args {
     addr: String,
     /// Input file containing list of study tags.
     /// Minimum of PatientID and StudyDate are required
-    #[arg(short = 'i', long, global = true)]
+    #[arg(short = 'i', long, value_name = "PATH", global = true)]
     in_study_file: Option<PathBuf>,
     /// Additional sequence of tags
     #[arg(short = 'q', long, global = true)]
@@ -39,12 +39,6 @@ struct Args {
     /// Information model for QueryRetrieveLevel tag
     #[arg(short = 'l', long, default_value = "study")]
     information_level: InformationLevel,
-    /// Path to file/directory to write response tags
-    #[arg(short = 'f', long, /*default_value = "./",*/ value_parser = validate_response_filepath)]
-    out_response_filepath: Option<PathBuf>,
-    /// Response file extension
-    #[arg(short = 'e', long, default_value = "csv")]
-    file_extension: FileExtension,
     /// Verbose mode
     #[arg(short, long, global = true)]
     verbose: bool,
@@ -65,7 +59,14 @@ enum InformationLevel {
 
 #[derive(Subcommand, Debug)]
 enum RequestMode {
-    Find,
+    Find {
+        /// Path to file/directory to write response tags
+        #[arg(short = 'f', long, value_name = "PATH", value_parser = validate_response_filepath)]
+        out_response_path: Option<PathBuf>,
+        /// Response file extension
+        #[arg(short = 'e', long, default_value = "csv")]
+        file_extension: FileExtension,
+    },
     Move {
         /// C-MOVE destination AE title. Defaults to --calling-ae-title
         #[arg(long = "move-destination")]
@@ -74,7 +75,7 @@ enum RequestMode {
         #[arg(short = 'p', long)]
         store_port: u16,
         /// Output directory for incoming objects
-        #[arg(short = 'o', long, default_value = "./output")]
+        #[arg(short = 'o', long, value_name = "PATH", default_value = "./output")]
         output_dir: PathBuf,
     },
 }
@@ -118,7 +119,7 @@ enum Error {
 
     UnsupportedTransferSyntax,
 
-    UnexpctedSCPResponse,
+    UnexpectedSCPResponse,
 
     NoResponsesToWrite,
 
@@ -162,8 +163,6 @@ fn run() -> Result<(), Error> {
         calling_ae_title,
         called_ae_title,
         information_level,
-        out_response_filepath,
-        file_extension,
         verbose,
     } = Args::parse();
 
@@ -195,8 +194,35 @@ fn run() -> Result<(), Error> {
     )?;
 
     info!("Requesting {} query", ds_queries.len());
-    let query_result = match request_mode {
-        RequestMode::Find => client.find_study(ds_queries),
+    let _query_result = match request_mode {
+        RequestMode::Find {
+            out_response_path: out_response_filepath,
+            file_extension,
+        } => {
+            let res = client.find_study(ds_queries);
+            let responses = match res {
+                Ok(responses) => {
+                    if responses.is_empty() {
+                        info!("No responses to write due to no matches");
+                        return Ok(());
+                    } else {
+                        responses
+                    }
+                }
+                Err(err) => {
+                    error!("{err}");
+                    return Ok(());
+                }
+            };
+
+            let out_file_path = if let Some(out_file_path) = out_response_filepath {
+                construct_filepath(out_file_path, file_extension)
+            } else {
+                info!("Responses received but no output path given, skipping write");
+                return Ok(());
+            };
+            serialize_responses(out_file_path, responses, tag_queries, file_extension)
+        }
         RequestMode::Move {
             move_destination,
             store_port,
@@ -229,37 +255,8 @@ fn run() -> Result<(), Error> {
 
     // BUG: putting wrong AE title doesn't release/abort association
 
-    /* BUG: finished move request doesn't hangs on opened association and doesn't reach .release_assoc()
-        - must be bug in move_study after receiving last match/response
-        - 2026-09-25T12:27:23.946347Z DEBUG fnostudyqr::store_async: scu ----> scp: ReleaseRQ
-        2026-09-25T12:27:23.946442Z  INFO fnostudyqr::store_async: Released association with ORTHANC
-        2026-09-25T12:27:23.946471Z  INFO fnostudyqr::store_async: Dropping connection with ORTHANC (127.0.0.1:46250)
-        2026-09-25T12:27:53.975346Z ERROR fnostudyqr::client: Unexpected SCP response: AbortRQ { source: ServiceUser }
-        2026-09-25T12:28:24.006826Z  INFO fnostudyqr::client: Association released
-        2026-09-25T12:28:24.006986Z ERROR fnostudyqr: UnexpctedSCPResponse
-    */
     client.release_assoc();
-
-    let responses = match query_result {
-        Ok(responses) => responses,
-        Err(Error::NoResponsesToWrite) => {
-            info!("No responses to write due to no matches");
-            return Ok(());
-        }
-        Err(err) => {
-            error!("{err}");
-            return Ok(());
-        }
-    };
-
-    let out_file_path = if let Some(out_file_path) = out_response_filepath {
-        construct_filepath(out_file_path, file_extension)
-    } else {
-        info!("Responses received but no output path given, skipping write");
-        return Ok(());
-    };
-
-    serialize_responses(out_file_path, responses, tag_queries, file_extension)
+    Ok(())
 }
 
 fn parse_query_tags(query_tags: Vec<String>) -> Result<Vec<TermQuery>, Whatever> {

@@ -8,13 +8,14 @@ A CLI query/retrieve tool for a bulk of DICOM studies.
 
 * `-i, --in-study-file <PATH>`: File path input list of studies to query/retrieve. If not given the tool fallbacks to query tags.
 * `-q, --query-tag <QUERY_TAG>`: Additional sequence of tags added to list of studies. Overwrites dataset tags from file if the tag has no value.
-* `-l, --information-level`: Information level to request at. One of `study (default)`, `patient` or `series`. Restricts at what level tags/objects can be queried/retrieved.
+* `-l, --information-level`: Information level to request at, one of `study (default)`, `patient` or `series`. Restricts at what level tags/objects can be queried/retrieved.
 * `-t, --calling-ae-title <AE>`: Caller application entity title.
 * `-c, --called-ae-title <AE>`: Called application entity title.
 
 ##### `find`-only options
 
-* `-o, --out-study-file (-o) <PATH>`: File path with responses. Defaults to `responses.csv`.
+* `-f, --out-response-path <PATH>`: Path to file/directory to write response tags. If not given no responses are written.
+* -e, --file-extension <FILE_EXTENSION>: Response file extension, supports `[csv, json]`. Defaults to `csv`.
 
 ##### Find example
 
@@ -23,8 +24,8 @@ A CLI query/retrieve tool for a bulk of DICOM studies.
 ##### `move`-only options
 
 * `--move-destination <AE>`: Destination application entity title. Must be equal to `--calling-ae-title` if destination is caller.
-* `-p, --store-port (-p) <PORT>`: Store port to listen on if destination is caller.
-* `-o, --output-dir (-o) <PORT>`: Output directory for incoming objects. Defaults to `./output`.
+* `-p, --store-port <PORT>`: Store port to listen on if destination is caller.
+* `-o, --output-dir <PATH>`: Output directory for incoming objects. Defaults to `./output`.
 
 ##### Move example
 
@@ -36,9 +37,9 @@ A CLI query/retrieve tool for a bulk of DICOM studies.
 
 * Required file format is `.csv` with semicolon `;` separator.
 Tags can be specified as keyword or hex value `(gggg,eeee)` with leading zeroes, ex. `PatientID`, `(0010,0020)` or `0010,0020`.
-* Find request may contain any DICOM tags up to the requested information level, ex: requesting PatientID and StudyDate at level `series` will match to all series per requested study. Value matching is case-sensitive.
+* Find request may contain any DICOM tags up to the requested information level, eg.: requesting PatientID and StudyDate at level `series` will match to all series per requested study. Value matching is case-sensitive.
 * Empty tag value will be overwritten by matching `<query-tag>` value.
-* Order of date elements must be *YYYY-MM-DD* and time elements *H:M:S*, including leading zeroes, otherwise values will be incorrectly matched.
+* Format of date elements must be *YYYY-MM-DD* and time elements *H:M:S*, including leading zeroes, otherwise values will be incorrectly matched.
 
 ##### Example input file
 
