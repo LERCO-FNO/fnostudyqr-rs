@@ -25,7 +25,7 @@ struct Args {
     addr: String,
     /// Input file containing list of study tags.
     /// Minimum of PatientID and StudyDate are required
-    #[arg(short = 'i', long, global = true)]
+    #[arg(short = 'i', long, value_name = "PATH", global = true)]
     in_study_file: Option<PathBuf>,
     /// Additional sequence of tags
     #[arg(short = 'q', long, global = true)]
@@ -61,7 +61,7 @@ enum InformationLevel {
 enum RequestMode {
     Find {
         /// Path to file/directory to write response tags
-        #[arg(short = 'f', long, /*default_value = "./",*/ value_parser = validate_response_filepath)]
+        #[arg(short = 'f', long, value_name = "PATH", value_parser = validate_response_filepath)]
         out_response_path: Option<PathBuf>,
         /// Response file extension
         #[arg(short = 'e', long, default_value = "csv")]
@@ -75,7 +75,7 @@ enum RequestMode {
         #[arg(short = 'p', long)]
         store_port: u16,
         /// Output directory for incoming objects
-        #[arg(short = 'o', long, default_value = "./output")]
+        #[arg(short = 'o', long, value_name = "PATH", default_value = "./output")]
         output_dir: PathBuf,
     },
 }
