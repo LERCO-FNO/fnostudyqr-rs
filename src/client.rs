@@ -384,40 +384,7 @@ impl ScuClient {
                                 debug!("Operation pending: 0x{status:X}");
                             }
 
-                            let dcm_obj = if let Some(second_pdata) = data.get(1) {
-                                InMemDicomObject::read_dataset_with_ts(
-                                    second_pdata.data.as_slice(),
-                                    self.ts,
-                                )
-                                .whatever_context("Could not read response data set")?
-                            } else {
-                                let mut rsp = self.assoc.receive_pdata();
-                                let mut response_data = Vec::new();
-                                rsp.read_to_end(&mut response_data)
-                                    .whatever_context("Failed to read response data")?;
-                                InMemDicomObject::read_dataset_with_ts(&response_data[..], self.ts)
-                                    .whatever_context("Could not read response data set")?
-                            };
-
-                            /*println!(
-                                "------------------------ Match #{i} ------------------------"
-                            );
-                            DumpOptions::new()
-                                .dump_object(&dcm_obj)
-                                .context(DumpOutputSnafu)?;*/
-
-                            let status = dcm_obj
-                                .get(tags::STATUS)
-                                .and_then(|el| el.to_int::<u16>().ok());
-                            responses.push(dcm_obj);
-
-                            if status == Some(0) {
-                                if self.verbose {
-                                    debug!("Matching is complete");
-                                }
-                                break;
-                            }
-                            i += 1;
+                            _i += 1;
                         } else {
                             let msg = match status {
                                 0xa701 => "Out of resources (number of matches)",
