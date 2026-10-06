@@ -1,7 +1,7 @@
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use dicom_core::value::{DicomDate, DicomDateTime, DicomTime};
-use snafu::{ResultExt, Whatever, whatever};
-use std::path::PathBuf;
+use snafu::{OptionExt, ResultExt, Whatever, whatever};
+use std::path::{Path, PathBuf};
 use tracing::warn;
 
 use crate::FileExtension;
@@ -36,12 +36,33 @@ pub fn parse_datetime(datetime_str: &str) -> Result<String, Whatever> {
     Ok(dicom_dt.to_encoded())
 }
 
-pub fn validate_response_filepath(value: &str) -> Result<PathBuf, Whatever> {
-    let path = PathBuf::from(value);
-    if !path.exists() {
-        whatever!("Output response path doesn't exist");
+pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
+    let path_ref = Path::new(path);
+
+    // - case 1: path is dir -> check directory exists -> will write as path/to/dir/response.<extension>
+    if path_ref.is_dir() {
+        return to_absolute_path(path_ref);
     }
-    Ok(path)
+
+    // - case 2: path is file -> check parent directory exists -> will write as path/to/parent/<filename>.<extension>
+    if path.ends_with(['/', std::path::MAIN_SEPARATOR]) || path_ref.extension().is_none() {
+        whatever!("Directory {path_ref:?} not found")
+    }
+
+    let parent = match path_ref.parent() {
+        Some(p) if p.as_os_str().is_empty() => Path::new("."),
+        Some(p) => p,
+        None => whatever!("Path {path_ref:?} has no parent"),
+    };
+
+    if !parent.is_dir() {
+        whatever!("Parent {parent:?} is not a directory");
+    }
+
+    let file_name = path_ref
+        .file_name()
+        .whatever_context(format!("Invalid path {path_ref:?}"))?;
+    Ok(to_absolute_path(parent)?.join(file_name))
 }
 
 pub fn construct_filepath(path: PathBuf, extension: FileExtension) -> PathBuf {
@@ -63,6 +84,10 @@ pub fn construct_filepath(path: PathBuf, extension: FileExtension) -> PathBuf {
         }
         path
     }
+}
+
+fn to_absolute_path(path: &Path) -> Result<PathBuf, Whatever> {
+    std::path::absolute(path).with_whatever_context(|e| format!("{e}"))
 }
 
 // TODO: possibly add parse_datetime_range()?
