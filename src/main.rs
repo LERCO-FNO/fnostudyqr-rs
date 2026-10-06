@@ -2,9 +2,11 @@ use clap::{Parser, Subcommand, ValueEnum};
 use snafu::{Report, Whatever, prelude::*};
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
+use std::str::FromStr;
 use tracing::{error, info, warn};
 
 mod client;
+mod deserialize;
 mod query;
 mod serialize;
 mod store_async;
@@ -86,6 +88,17 @@ enum FileExtension {
     Json,
 }
 
+impl FromStr for FileExtension {
+    type Err = String;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "csv" => Ok(FileExtension::Csv),
+            "json" => Ok(FileExtension::Json),
+            _ => Err(format!("Unsupported file extension {value}")),
+        }
+    }
+}
+
 #[derive(Debug, Snafu)]
 enum Error {
     /// Could not initialize SCU
@@ -112,8 +125,10 @@ enum Error {
         source: csv::Error,
         file: PathBuf,
     },
-    #[snafu(display("Could not create datasets from file"))]
-    DatasetsFromFile,
+    #[snafu(display("Could not create datasets from file: {reason}"))]
+    DatasetsFromFile {
+        reason: String,
+    },
 
     NoPresentationContext,
 

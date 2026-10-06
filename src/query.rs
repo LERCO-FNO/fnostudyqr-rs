@@ -5,13 +5,15 @@ use dicom_core::{
 use dicom_dictionary_std::StandardDataDictionary;
 use dicom_dictionary_std::tags;
 use dicom_object::{InMemDicomObject, mem::InMemElement};
+use std::ffi::OsStr;
+use std::fs::File;
 use std::path::PathBuf;
 
 use snafu::{OptionExt, ResultExt, Whatever, whatever};
 use std::str::FromStr;
 
-use crate::InformationLevel;
-use crate::{Error, FileNotFoundSnafu};
+use crate::{DatasetsFromFileSnafu, Error, FileNotFoundSnafu};
+use crate::{FileExtension, InformationLevel};
 
 use crate::utils::*;
 
@@ -64,13 +66,29 @@ fn datasets_from_file(
         ));
     };
 
+    let ext = file
+        .extension()
+        .and_then(OsStr::to_str)
+        .unwrap_or_default()
+        .parse::<FileExtension>()
+        .map_err(|reason| DatasetsFromFileSnafu { reason }.build())?;
+
+    match ext {
+        FileExtension::Csv => datasets_from_csv(file),
+        FileExtension::Json => todo!("Finish implementing json deserialization"),
+    }
+
+    // let (tags, datasets) = datasets_from_csv(file)?;
+    // Ok((datasets, tags))
+}
+
+fn datasets_from_csv(file: PathBuf) -> Result<(Vec<InMemDicomObject>, Vec<HeaderTag>), Error> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
         .delimiter(b';')
         .flexible(true)
         .from_path(&file)
         .context(FileNotFoundSnafu { file })?;
-
     let dict = StandardDataDictionary;
     let headers = reader
         .headers()
@@ -80,7 +98,6 @@ fn datasets_from_file(
         .map(|h| resolve_header_tag(&dict, h))
         .collect::<Result<Vec<HeaderTag>, Whatever>>()
         .whatever_context("Could not parse headers to tags")?;
-
     let datasets: Vec<InMemDicomObject> = reader
         .records()
         .map(|row| {
