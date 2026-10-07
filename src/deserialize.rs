@@ -1,35 +1,42 @@
+use std::path::{Path, PathBuf};
 use std::{fmt, str::FromStr};
 
+use crate::error::InvalidHeaderTagSnafu;
+use crate::utils::{parse_date_range, parse_datetime, parse_time};
 use dicom_core::dictionary::{DataDictionary, DataDictionaryEntry};
 use dicom_core::{DataElement, PrimitiveValue, Tag, VR};
-use dicom_dictionary_std::StandardDataDictionary;
+use dicom_dictionary_std::{StandardDataDictionary, tags};
 use dicom_object::{InMemDicomObject, mem::InMemElement};
 use serde::Deserialize;
-use serde::de::{self, Deserializer, MapAccess, Visitor};
+use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::Value;
-use snafu::{ResultExt, Whatever, whatever};
+use snafu::{OptionExt, ResultExt, Whatever, whatever};
 
-use crate::utils::{parse_date_range, parse_datetime, parse_time};
+use crate::error::{CsvSnafu, DeserError};
 
 #[derive(Debug)]
-pub struct DicomObjectQueries(InMemDicomObject);
+pub struct DicomObjectQueries(pub Vec<InMemDicomObject>);
 
-impl<'de> Deserialize<'de> for DicomObjectQueries {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_map(TagSetVisitor)
+#[derive(Debug)]
+struct Study(InMemDicomObject);
+
+struct StudyVisitor;
+
+impl<'de> Deserialize<'de> for Study {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(StudyVisitor)
     }
 }
 
-struct TagSetVisitor;
-
-impl<'de> Visitor<'de> for TagSetVisitor {
-    type Value = DicomObjectQueries;
-
+impl<'de> Visitor<'de> for StudyVisitor {
+    type Value = Study;
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("a map of DICOM keyword or \"gggg,eeee\" to value")
     }
-
-    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<DicomObjectQueries, A::Error> {
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Study, A::Error> {
         let mut elements = Vec::new();
 
         while let Some((key, value)) = map.next_entry::<String, Value>()? {
@@ -39,10 +46,57 @@ impl<'de> Visitor<'de> for TagSetVisitor {
             elements.push(element);
         }
 
-        Ok(DicomObjectQueries(InMemDicomObject::from_element_iter(
-            elements,
-        )))
+        Ok(Study(InMemDicomObject::from_element_iter(elements)))
     }
+}
+
+impl<'de> Deserialize<'de> for DicomObjectQueries {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(QueriesVisitor)
+    }
+}
+
+struct QueriesVisitor;
+
+impl<'de> Visitor<'de> for QueriesVisitor {
+    type Value = DicomObjectQueries;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("a map of DICOM keyword or \"gggg,eeee\" to value")
+    }
+
+    // deserialize sequence of maps: [ { ... }, { ... } ]
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<DicomObjectQueries, A::Error> {
+        let mut objects = Vec::with_capacity(seq.size_hint().unwrap_or(0).min(4096));
+        while let Some(Study(object)) = seq.next_element()? {
+            objects.push(object);
+        }
+        Ok(DicomObjectQueries(objects))
+    }
+
+    // deserialize single map { ... }
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<DicomObjectQueries, A::Error> {
+        let Study(object) = Study::deserialize(de::value::MapAccessDeserializer::new(map))?;
+        Ok(DicomObjectQueries(vec![object]))
+    }
+    // fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<JsonDicomTest, A::Error> {
+    //     let mut elements = Vec::new();
+    //
+    //     while let Some((key, value)) = map.next_entry::<String, Value>()? {
+    //         let (tag, vr) = resolve_tag(&key).map_err(de::Error::custom)?;
+    //         let element = build_element(tag, vr, &value)
+    //             .map_err(|e| de::Error::custom(format!("tag {key}: {e}")))?;
+    //         elements.push(element);
+    //     }
+    //
+    //     Ok(DicomObject(InMemDicomObject::from_element_iter(elements)))
+    // }
+}
+
+pub fn datasets_from_json(path: &Path) -> Result<() /*Vec<DicomObjectQueries>*/, Whatever> {
+    // let file = std::fs::File::open(path).with_whatever_context(|e| );
+
+    Ok(())
 }
 
 fn resolve_tag(key: &str) -> Result<(Tag, VR), String> {
@@ -123,6 +177,104 @@ fn to_primitive(vr: VR, s: &str) -> Result<PrimitiveValue, Whatever> {
     }
 }
 
+pub fn term_to_value(tag: Tag, str_value: &str) -> Result<PrimitiveValue, DeserError> {
+    // silent passthrough -> PACS will return value for this tag instead of matching
+    if str_value.is_empty() {
+        return Ok(PrimitiveValue::Empty);
+    }
+
+    let vr = {
+        StandardDataDictionary
+            .by_tag(tag)
+            .and_then(|e| e.vr.exact())
+            .unwrap_or(VR::LO)
+    };
+
+    // TODO: implement VR::DT - datetime handling
+    let value = match vr {
+        VR::AE
+        | VR::AS
+        | VR::CS
+        | VR::DS
+        | VR::IS
+        | VR::LO
+        | VR::LT
+        | VR::SH
+        | VR::PN
+        | VR::ST
+        | VR::UI
+        | VR::UC
+        | VR::UR
+        | VR::UT => PrimitiveValue::from(str_value),
+        VR::DA => {
+            let value = parse_date_range(str_value).whatever_context("fff")?;
+            PrimitiveValue::from(value)
+        }
+        VR::TM => {
+            let value = parse_time(str_value).whatever_context("ff")?;
+            PrimitiveValue::from(value)
+        }
+        VR::DT => {
+            let value = parse_datetime(str_value).whatever_context("fff")?;
+            PrimitiveValue::from(value)
+        }
+
+        VR::AT | VR::OB | VR::OD | VR::OF | VR::OL | VR::OV | VR::OW | VR::UN => {
+            whatever!("Unsupported VR {vr}")
+        }
+        VR::SQ => whatever!("Unsupported sequence-based query"),
+        VR::SS => {
+            let ss: i16 = str_value
+                .parse()
+                .whatever_context("Failed to parse value as SS")?;
+            PrimitiveValue::from(ss)
+        }
+        VR::SL => {
+            let sl: i32 = str_value
+                .parse()
+                .whatever_context("Failed to parse value as SL")?;
+            PrimitiveValue::from(sl)
+        }
+        VR::SV => {
+            let sv: i64 = str_value
+                .parse()
+                .whatever_context("Failed to parse value as SV")?;
+            PrimitiveValue::from(sv)
+        }
+        VR::US => {
+            let us: u16 = str_value
+                .parse()
+                .whatever_context("Failed to parse value as US")?;
+            PrimitiveValue::from(us)
+        }
+        VR::UL => {
+            let ul: u32 = str_value
+                .parse()
+                .whatever_context("Failed to parse value as UL")?;
+            PrimitiveValue::from(ul)
+        }
+        VR::UV => {
+            let uv: u64 = str_value
+                .parse()
+                .whatever_context("Failed to parse value as UV")?;
+            PrimitiveValue::from(uv)
+        }
+        VR::FL => {
+            let fl: f32 = str_value
+                .parse()
+                .whatever_context("Failed to parse value as FL")?;
+            PrimitiveValue::from(fl)
+        }
+        VR::FD => {
+            let fd: f64 = str_value
+                .parse()
+                .whatever_context("Failed to parse value as FD")?;
+            PrimitiveValue::from(fd)
+        }
+    };
+    Ok(value)
+}
+
 fn parse_number<T>(s: &str) -> Result<PrimitiveValue, Whatever>
 where
     T: FromStr,
@@ -135,16 +287,127 @@ where
         .map(PrimitiveValue::from)
 }
 
+pub fn datasets_from_csv(
+    file: PathBuf,
+) -> Result<(DicomObjectQueries, Vec<HeaderTag>), DeserError> {
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .delimiter(b';')
+        .flexible(true)
+        .from_path(&file)
+        .context(CsvSnafu)?;
+    let dict = StandardDataDictionary;
+    let headers = reader.headers().context(CsvSnafu)?;
+    let tags = headers
+        .iter()
+        .map(|h| resolve_header_tag(&dict, h))
+        .collect::<Result<Vec<HeaderTag>, DeserError>>()?;
+    let datasets: Vec<InMemDicomObject> = reader
+        .records()
+        .map(|row| {
+            let row = row.context(CsvSnafu)?;
+            row_to_dataset(&tags, &row)
+        })
+        .collect::<Result<Vec<InMemDicomObject>, DeserError>>()?;
+    // .whatever_context("Could not create datasets from file")?;
+    Ok((DicomObjectQueries(datasets), tags))
+}
+
+fn row_to_dataset(
+    tags: &[HeaderTag],
+    row: &csv::StringRecord,
+) -> Result<InMemDicomObject, DeserError> {
+    let elements = tags
+        .iter()
+        .zip(row.iter())
+        .map(|(header_tag, str_value)| {
+            let value = term_to_value(header_tag.tag, str_value).with_whatever_context(|_| {
+                format!("Bad value {str_value:?} for tag {}", header_tag.tag)
+            })?;
+            Ok(DataElement::new(header_tag.tag, header_tag.vr, value))
+        })
+        .collect::<Result<Vec<InMemElement>, DeserError>>()?;
+    Ok(InMemDicomObject::from_element_iter(elements))
+}
+
+#[derive(Debug, PartialEq)]
+pub struct HeaderTag {
+    pub tag: Tag,
+    pub vr: VR,
+}
+
+fn resolve_header_tag(
+    dict: &StandardDataDictionary,
+    header: &str,
+) -> Result<HeaderTag, DeserError> {
+    let entry = dict
+        .by_expr(header)
+        .context(InvalidHeaderTagSnafu { header })?;
+    let vr = entry
+        .vr()
+        .exact()
+        .whatever_context(format!("Unsupported VR for tag: {}", entry.tag()))?;
+
+    Ok(HeaderTag {
+        tag: entry.tag(),
+        vr,
+    })
+}
+
+pub fn default_dataset() -> (DicomObjectQueries, Vec<HeaderTag>) {
+    let study_uid_tag = HeaderTag {
+        tag: tags::STUDY_INSTANCE_UID,
+        vr: VR::UI,
+    };
+    let ds = InMemDicomObject::from_element_iter([DataElement::new(
+        study_uid_tag.tag,
+        study_uid_tag.vr,
+        PrimitiveValue::Empty,
+    )]);
+
+    (DicomObjectQueries(vec![ds]), vec![study_uid_tag])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn deser_json() {
-        let reader = std::fs::File::open("./output/res.json").expect("Failed reading JSON file");
-        let deserd: Vec<DicomObjectQueries> =
-            serde_json::from_reader(std::io::BufReader::new(reader))
-                .expect("Failed deserializing JSON");
-        println!("{deserd:?}")
+    fn deser_single_object() {
+        let json_object = r#"
+        {
+            "StudyDate": "2000-01-01",
+            "PatientID": "LIDC-IDRI-0580",
+            "StudyInstanceUID": "1.3.6.1.4.1.14519.5.2.1.6279.6001.173480979711457247360986415860",
+            "StudyDescription": "",
+            "ModalitiesInStudy": "nAn"
+        }"#;
+
+        let DicomObjectQueries(objects) =
+            serde_json::from_str(json_object).expect("Failed deserializing JSON");
+        assert_eq!(objects.len(), 1);
+    }
+
+    #[test]
+    fn deser_multiple_object() {
+        let json_object = r#"
+        [
+            {
+                "StudyDate": "1999-01-02",
+                "PatientID": "112516",
+                "StudyInstanceUID": "1.2.840.113654.2.55.33575893932308185246496913106863435791"
+            },
+            {
+                "StudyDate": "2000-01-01",
+                "PatientID": "LIDC-IDRI-0580",
+                "StudyInstanceUID": "1.3.6.1.4.1.14519.5.2.1.6279.6001.173480979711457247360986415860",
+                "StudyDescription": "",
+                "ModalitiesInStudy": "nAn"
+            }
+        ]"#;
+
+        let DicomObjectQueries(objects) =
+            serde_json::from_str(json_object).expect("Failed deserializing JSON");
+        assert_eq!(objects.len(), 2);
     }
 }

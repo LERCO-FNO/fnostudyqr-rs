@@ -202,7 +202,7 @@ fn run() -> Result<(), Error> {
 
     let query_tags = parse_query_tags(query_tag)
         .whatever_context("Failed to parse query tags from command line")?;
-    let (ds_queries, tag_queries) =
+    let (deserialize::DicomObjectQueries(ds_queries), tag_queries) =
         build_queries(in_study_file, query_tags, &information_level, verbose)?;
 
     let mut client = ScuClient::new(
