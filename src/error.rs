@@ -11,13 +11,13 @@ pub enum DeserError {
         path: PathBuf,
     },
 
-    #[snafu(display("Invalid JSON in {}", path.display()))]
+    #[snafu(display("Invalid JSON: {}", source /*path.display()*/))]
     Json {
         source: serde_json::Error,
-        path: PathBuf,
+        // path: PathBuf,
     },
 
-    #[snafu(display("Invalid CSV in {}", source))]
+    #[snafu(display("Invalid CSV: {}", source))]
     Csv { source: csv::Error },
 
     #[snafu(display("Invalid DICOM tag header: {}", header))]

@@ -1,43 +1,52 @@
 use dicom_core::ops::{ApplyOp, AttributeAction, AttributeOp, AttributeSelector};
-use dicom_core::{DataDictionary, DataElement, PrimitiveValue, Tag, VR};
+use dicom_core::{DataDictionary, PrimitiveValue};
 use dicom_dictionary_std::StandardDataDictionary;
-use dicom_dictionary_std::tags;
 use dicom_object::InMemDicomObject;
-use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
 use snafu::{OptionExt, ResultExt, Whatever};
 use std::str::FromStr;
 
+use crate::FileExtension;
 use crate::{DatasetsFromFileSnafu, DeserDatasetsFromFileSnafu, Error};
-use crate::{FileExtension, InformationLevel};
 
 use crate::deserialize::{
-    DicomObjectQueries, HeaderTag, StudyJson, datasets_from_csv, default_dataset, term_to_value,
+    CsvStudyQueries, JsonStudyQueries, datasets_from_csv, datasets_from_json, default_dataset,
+    term_to_value,
 };
 
 pub fn build_queries(
     file: Option<PathBuf>,
     term_tags: Vec<TermQuery>,
-    information_model: &InformationLevel,
+    // information_model: &InformationLevel,
     _verbose: bool,
-) -> Result<(DicomObjectQueries, Vec<Tag>), Error> {
-    let (datasets, file_tags) = match file {
+) -> Result<QueryDatasetModel, Error> {
+    let query_datasets = match file {
         Some(file) => datasets_from_file(file)?,
-        None => default_dataset(),
+        None => QueryDatasetModel::JsonQuery {
+            queries: default_dataset(),
+        }, // default uses JsonStudyQueries model for simplicity
     };
     // let (datasets, file_tags) = datasets_from_file(file)?;
-    let mut datasets = override_tags(datasets, &term_tags)
+    let mut query_datasets = add_terminal_tags(query_datasets, &term_tags)
         .whatever_context("Could not add tags from arguments to datasets")?;
 
+    /*
     let level = match information_model {
         InformationLevel::Patient => "PATIENT",
         InformationLevel::Study => "STUDY",
         InformationLevel::Series => "SERIES",
     };
+    */
+    merge_tags(&mut query_datasets, term_tags);
+    // Ok((query_datasets, merged_tags))
+    Ok(query_datasets)
+}
 
-    datasets.0.iter_mut().for_each(|ds| {
+/*
+fn insert_query_retrieve_level() {
+    query_datasets.0.iter_mut().for_each(|ds| {
         if ds.get(tags::QUERY_RETRIEVE_LEVEL).is_none() {
             ds.put(DataElement::new(
                 tags::QUERY_RETRIEVE_LEVEL,
@@ -46,28 +55,32 @@ pub fn build_queries(
             ));
         }
     });
-
-    let merged_tags = merge_tags(file_tags, term_tags);
-    Ok((datasets, merged_tags))
+}
+*/
+#[derive(Debug)]
+pub enum QueryDatasetModel {
+    JsonQuery { queries: JsonStudyQueries },
+    CsvQuery { queries: CsvStudyQueries },
 }
 
-fn datasets_from_file(file: PathBuf) -> Result<(InMemDicomObject, Vec<HeaderTag>), Error> {
-    // return default Vec<InMemDicomObject> if no path given
-    // let Some(file) = file else {
-    //     let study_uid_tag = HeaderTag {
-    //         tag: tags::STUDY_INSTANCE_UID,
-    //         vr: VR::UI,
-    //     };
-    //     return Ok((
-    //         vec![InMemDicomObject::from_element_iter([DataElement::new(
-    //             study_uid_tag.tag,
-    //             study_uid_tag.vr,
-    //             PrimitiveValue::Empty,
-    //         )])],
-    //         vec![study_uid_tag],
-    //     ));
-    // };
-
+fn datasets_from_file(file: PathBuf) -> Result<QueryDatasetModel, Error> {
+    /*
+        return default Vec<InMemDicomObject> if no path given
+        let Some(file) = file else {
+            let study_uid_tag = HeaderTag {
+                tag: tags::STUDY_INSTANCE_UID,
+                vr: VR::UI,
+            };
+            return Ok((
+                vec![InMemDicomObject::from_element_iter([DataElement::new(
+                    study_uid_tag.tag,
+                    study_uid_tag.vr,
+                    PrimitiveValue::Empty,
+                )])],
+                vec![study_uid_tag],
+            ));
+        };
+    */
     let ext = file
         .extension()
         .and_then(OsStr::to_str)
@@ -75,16 +88,16 @@ fn datasets_from_file(file: PathBuf) -> Result<(InMemDicomObject, Vec<HeaderTag>
         .parse::<FileExtension>()
         .map_err(|reason| DatasetsFromFileSnafu { reason }.build())?;
 
-    Ok((InMemDicomObject::new_empty(), vec![]))
-
-    // match ext {
-    //     FileExtension::Csv => todo!("finiths this"), //datasets_from_csv(file), //.context(DeserDatasetsFromFileSnafu),
-    //     FileExtension::Json => todo!("finish this function"), // datasets_from_json(file), //.context(DeserDatasetsFromFileSnafu),
-    // }
-    // .context(DeserDatasetsFromFileSnafu)
-    //
-    // let (tags, datasets) = datasets_from_csv(file)?;
-    // Ok((datasets, tags))
+    match ext {
+        FileExtension::Csv => {
+            let queries = datasets_from_csv(file).context(DeserDatasetsFromFileSnafu)?;
+            Ok(QueryDatasetModel::CsvQuery { queries })
+        } //datasets_from_csv(file), //.context(DeserDatasetsFromFileSnafu),
+        FileExtension::Json => {
+            let queries = datasets_from_json(file).context(DeserDatasetsFromFileSnafu)?;
+            Ok(QueryDatasetModel::JsonQuery { queries })
+        } // todo!("finish this function"), // datasets_from_json(file), //.context(DeserDatasetsFromFileSnafu),
+    }
 }
 
 // fn datasets_from_csv(file: PathBuf) -> Result<(Vec<InMemDicomObject>, Vec<HeaderTag>), Error> {
@@ -178,30 +191,57 @@ impl FromStr for TermQuery {
     }
 }
 
-fn override_tags(
-    mut datasets: DicomObjectQueries,
+fn add_terminal_tags(
+    mut query_datasets: QueryDatasetModel,
     term_tags: &[TermQuery],
-) -> Result<DicomObjectQueries, crate::Error> {
+) -> Result<QueryDatasetModel, crate::Error> {
     for t in term_tags {
         let value = term_to_value(t.selector.last_tag(), &t.value)
             .whatever_context("failed overriding tags")?;
 
-        for ds in datasets.0.iter_mut() {
-            // override a value only if tag is missing
-            // TODO: also check for PrimitiveValue::Empty?
-            if ds.get(t.selector.last_tag()).is_none() {
-                ds.apply(AttributeOp::new(
-                    t.selector.clone(),
-                    AttributeAction::Set(value.to_owned()),
-                ))
-                .with_whatever_context(|_| {
-                    format!("Could not set query attribute {}", t.selector)
-                })?;
+        match &mut query_datasets {
+            QueryDatasetModel::JsonQuery { queries } => {
+                for (ds, _) in queries.0.iter_mut() {
+                    apply_tag(ds, t, &value).with_whatever_context(|e| format!("{e}"))?;
+                }
+            }
+            QueryDatasetModel::CsvQuery { queries } => {
+                for ds in queries.0.iter_mut() {
+                    apply_tag(ds, t, &value).with_whatever_context(|e| format!("{e}"))?;
+                }
             }
         }
+        // for ds in query_datasets.0.iter_mut() {
+        //     // override a value only if tag is missing
+        //     // TODO: also check for PrimitiveValue::Empty?
+        //     if ds.get(t.selector.last_tag()).is_none() {
+        //         ds.apply(AttributeOp::new(
+        //             t.selector.clone(),
+        //             AttributeAction::Set(value.to_owned()),
+        //         ))
+        //         .with_whatever_context(|_| {
+        //             format!("Could not set query attribute {}", t.selector)
+        //         })?;
+        //     }
+        // }
     }
 
-    Ok(datasets)
+    Ok(query_datasets)
+}
+
+fn apply_tag(
+    ds: &mut InMemDicomObject,
+    t: &TermQuery,
+    value: &PrimitiveValue,
+) -> Result<(), Whatever> {
+    if ds.get(t.selector.last_tag()).is_none() {
+        ds.apply(AttributeOp::new(
+            t.selector.clone(),
+            AttributeAction::Set(value.to_owned()),
+        ))
+        .whatever_context(format!("Could not override query attribute {}", t.selector))?;
+    }
+    Ok(())
 }
 
 // fn term_to_value(tag: Tag, str_value: &str) -> Result<PrimitiveValue, Whatever> {
@@ -306,20 +346,35 @@ fn override_tags(
 //     Ok(value)
 // }
 
-fn merge_tags(file_tags: Vec<HeaderTag>, term_tags: Vec<TermQuery>) -> Vec<Tag> {
-    let mut tags = file_tags.iter().map(|t| t.tag).collect::<Vec<Tag>>();
-    for t in term_tags.iter() {
-        if !tags.contains(&t.selector.last_tag()) {
-            tags.push(t.selector.last_tag());
+fn merge_tags(datasets: &mut QueryDatasetModel, term_tags: Vec<TermQuery>) {
+    match datasets {
+        QueryDatasetModel::JsonQuery { queries } => {
+            for (_, tags) in queries.0.iter_mut() {
+                for t in term_tags.iter() {
+                    tags.insert(t.selector.last_tag());
+                }
+            }
+        }
+        QueryDatasetModel::CsvQuery { queries } => {
+            for t in term_tags.iter() {
+                queries.1.insert(t.selector.last_tag());
+            }
         }
     }
-    tags.sort();
-    tags
+    // let mut tags = file_tags.iter().map(|t| t.tag).collect::<Vec<Tag>>();
+    // for t in term_tags.iter() {
+    //     if !tags.contains(&t.selector.last_tag()) {
+    //         tags.push(t.selector.last_tag());
+    //     }
+    // }
+    // tags.sort();
+    // tags
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dicom_dictionary_std::tags;
 
     #[test]
     fn parse_datetime() {
