@@ -7,6 +7,7 @@ use tracing::{error, info, warn};
 
 mod client;
 mod deserialize;
+mod error;
 mod query;
 mod serialize;
 mod store_async;
@@ -128,6 +129,11 @@ enum Error {
     #[snafu(display("Could not create datasets from file: {reason}"))]
     DatasetsFromFile {
         reason: String,
+    },
+
+    #[snafu(display("Failed deserializing datasets from file"))]
+    DeserDatasetsFromFile {
+        source: error::DeserError,
     },
 
     NoPresentationContext,
