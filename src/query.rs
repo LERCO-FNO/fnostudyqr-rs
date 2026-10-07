@@ -2,6 +2,8 @@ use dicom_core::ops::{ApplyOp, AttributeAction, AttributeOp, AttributeSelector};
 use dicom_core::{DataDictionary, DataElement, PrimitiveValue, Tag, VR};
 use dicom_dictionary_std::StandardDataDictionary;
 use dicom_dictionary_std::tags;
+use dicom_object::InMemDicomObject;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
@@ -12,7 +14,7 @@ use crate::{DatasetsFromFileSnafu, DeserDatasetsFromFileSnafu, Error};
 use crate::{FileExtension, InformationLevel};
 
 use crate::deserialize::{
-    DicomObjectQueries, HeaderTag, datasets_from_csv, default_dataset, term_to_value,
+    DicomObjectQueries, HeaderTag, StudyJson, datasets_from_csv, default_dataset, term_to_value,
 };
 
 pub fn build_queries(
@@ -49,7 +51,7 @@ pub fn build_queries(
     Ok((datasets, merged_tags))
 }
 
-fn datasets_from_file(file: PathBuf) -> Result<(DicomObjectQueries, Vec<HeaderTag>), Error> {
+fn datasets_from_file(file: PathBuf) -> Result<(InMemDicomObject, Vec<HeaderTag>), Error> {
     // return default Vec<InMemDicomObject> if no path given
     // let Some(file) = file else {
     //     let study_uid_tag = HeaderTag {
@@ -73,11 +75,14 @@ fn datasets_from_file(file: PathBuf) -> Result<(DicomObjectQueries, Vec<HeaderTa
         .parse::<FileExtension>()
         .map_err(|reason| DatasetsFromFileSnafu { reason }.build())?;
 
-    match ext {
-        FileExtension::Csv => datasets_from_csv(file).context(DeserDatasetsFromFileSnafu),
-        FileExtension::Json => todo!("Finish implementing json deserialization"),
-    }
+    Ok((InMemDicomObject::new_empty(), vec![]))
 
+    // match ext {
+    //     FileExtension::Csv => todo!("finiths this"), //datasets_from_csv(file), //.context(DeserDatasetsFromFileSnafu),
+    //     FileExtension::Json => todo!("finish this function"), // datasets_from_json(file), //.context(DeserDatasetsFromFileSnafu),
+    // }
+    // .context(DeserDatasetsFromFileSnafu)
+    //
     // let (tags, datasets) = datasets_from_csv(file)?;
     // Ok((datasets, tags))
 }
