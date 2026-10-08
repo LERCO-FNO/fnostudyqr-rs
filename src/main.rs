@@ -307,6 +307,8 @@ fn parse_query_tags(
     // always add StudyInstanceUID to be part of responses
     if !tags.iter().any(|t| t.selector == study_tag.selector) {
         tags.insert(0, study_tag);
+    } else {
+        warn!("DICOM tag StudyInstanceUID (0020,000D) already added automatically");
     }
 
     // implicitly add required query retrieve level here if not specified as argument
@@ -315,6 +317,10 @@ fn parse_query_tags(
         .any(|t| t.selector == query_retrieve_level.selector)
     {
         tags.insert(0, query_retrieve_level);
+    } else {
+        warn!(
+            "DICOM tag QueryRetrieveLevel (0008,0052) already added automatically by --information_level"
+        );
     }
 
     Ok(tags)
