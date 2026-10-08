@@ -117,13 +117,13 @@ impl ScuClient {
 
     pub fn find_study(
         &mut self,
-        ds_queries: Vec<InMemDicomObject>,
+        ds_queries: &[InMemDicomObject],
         // out_response_file: PathBuf,
     ) -> Result<Vec<InMemDicomObject>, Error> {
         let mut responses: Vec<InMemDicomObject> = Vec::new();
 
         let ds_len = ds_queries.len() as u16;
-        for (ds, index) in ds_queries.into_iter().zip(1..=ds_len) {
+        for (ds, index) in ds_queries.iter().zip(1..=ds_len) {
             let cmd = find_req_command(&self.abstract_syntax, index);
             let mut cmd_data = Vec::with_capacity(128);
             cmd.write_dataset_with_ts(&mut cmd_data, &entries::IMPLICIT_VR_LITTLE_ENDIAN.erased())
@@ -279,13 +279,13 @@ impl ScuClient {
 
     pub fn move_study(
         &mut self,
-        ds_queries: Vec<InMemDicomObject>,
+        ds_queries: &[InMemDicomObject],
         move_destination: &str,
     ) -> Result<(), Error> {
         // let mut responses: Vec<InMemDicomObject> = Vec::new();
 
         let ds_len = ds_queries.len() as u16;
-        for (ds, index) in ds_queries.into_iter().zip(1..=ds_len) {
+        for (ds, index) in ds_queries.iter().zip(1..=ds_len) {
             let cmd = move_req_command(&self.abstract_syntax, move_destination, index);
             let mut cmd_data = Vec::with_capacity(128);
             cmd.write_dataset_with_ts(&mut cmd_data, &entries::IMPLICIT_VR_LITTLE_ENDIAN.erased())

@@ -1,7 +1,13 @@
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use dicom_core::value::{DicomDate, DicomDateTime, DicomTime};
+use dicom_core::{
+    Tag,
+    value::{DicomDate, DicomDateTime, DicomTime},
+};
 use snafu::{OptionExt, ResultExt, Whatever, whatever};
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 use tracing::warn;
 
 use crate::FileExtension;
@@ -88,6 +94,11 @@ pub fn construct_filepath(path: PathBuf, extension: FileExtension) -> PathBuf {
 
 fn to_absolute_path(path: &Path) -> Result<PathBuf, Whatever> {
     std::path::absolute(path).with_whatever_context(|e| format!("{e}"))
+}
+
+pub fn push_unique_tags(current: &mut Vec<Tag>, extra_tags: &[Tag]) {
+    let mut seen: HashSet<Tag> = current.iter().copied().collect();
+    current.extend(extra_tags.iter().copied().filter(|t| seen.insert(*t)));
 }
 
 // TODO: possibly add parse_datetime_range()?

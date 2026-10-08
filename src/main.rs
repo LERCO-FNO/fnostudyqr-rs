@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use snafu::{Report, Whatever, prelude::*};
+use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -202,88 +203,86 @@ fn run() -> Result<(), Error> {
 
     let query_tags = parse_query_tags(query_tag, &information_level)
         .whatever_context("Failed to parse query tags from command line")?;
-    let ds_queries: QueryDatasetModel = build_queries(
+    let ds_queries = build_queries(
         in_study_file,
         query_tags,
         /*&information_level,*/ verbose,
     )?;
 
-    println!("{ds_queries:?}");
+    let mut client = ScuClient::new(
+        (&request_mode).into(),
+        addr,
+        information_level,
+        calling_ae_title.clone(),
+        called_ae_title,
+        verbose,
+    )?;
 
-    /*
-        let mut client = ScuClient::new(
-            (&request_mode).into(),
-            addr,
-            information_level,
-            calling_ae_title.clone(),
-            called_ae_title,
-            verbose,
-        )?;
-
-        info!("Requesting {} query", ds_queries.len());
-        let _query_result = match request_mode {
-            RequestMode::Find {
-                out_response_path: out_response_filepath,
-                file_extension,
-            } => {
-                let res = client.find_study(ds_queries);
-                let responses = match res {
-                    Ok(responses) => {
-                        if responses.is_empty() {
-                            info!("No responses to write due to no matches");
-                            return Ok(());
-                        } else {
-                            responses
-                        }
-                    }
-                    Err(err) => {
-                        error!("{err}");
+    info!("Requesting {} query/ies", ds_queries.len());
+    let _query_result = match request_mode {
+        RequestMode::Find {
+            out_response_path: out_response_filepath,
+            file_extension,
+        } => {
+            let res = client.find_study(&ds_queries.queries);
+            let responses = match res {
+                Ok(responses) => {
+                    if responses.is_empty() {
+                        info!("No responses to write due to no matches");
                         return Ok(());
+                    } else {
+                        responses
                     }
-                };
-
-                let out_file_path = if let Some(out_file_path) = out_response_filepath {
-                    construct_filepath(out_file_path, file_extension)
-                } else {
-                    info!("Responses received but no output path given, skipping write");
+                }
+                Err(err) => {
+                    error!("{err}");
                     return Ok(());
-                };
-                serialize_responses(out_file_path, responses, tag_queries, file_extension)
-            }
-            RequestMode::Move {
-                move_destination,
+                }
+            };
+
+            // TODO: finish refactoring these serializing functions
+            let out_file_path = if let Some(out_file_path) = out_response_filepath {
+                construct_filepath(out_file_path, file_extension)
+            } else {
+                info!("Responses received but no output path given, skipping write");
+                return Ok(());
+            };
+            serialize_responses(out_file_path, responses, tag_queries, file_extension)?;
+            Ok(())
+        }
+        RequestMode::Move {
+            move_destination,
+            store_port,
+            output_dir,
+        } => {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let store_args = StoreScpArgs {
+                calling_ae_title: calling_ae_title.clone(), // was calling_ae_title.clone()
+                output_dir,                                 // was output_dir.clone()
                 store_port,
-                output_dir,
-            } => {
-                let runtime = tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap();
-                let store_args = StoreScpArgs {
-                    calling_ae_title: calling_ae_title.clone(), // was calling_ae_title.clone()
-                    output_dir,                                 // was output_dir.clone()
-                    store_port,
-                    verbose,
-                };
+                verbose,
+            };
 
-                let handle = runtime.spawn(async move {
-                    let _ = run_async(store_args).await.unwrap_or_else(|err| {
-                        error!("{:?}", Report::from_error(err));
-                        std::process::exit(-2);
-                    });
+            let handle = runtime.spawn(async move {
+                let _ = run_async(store_args).await.unwrap_or_else(|err| {
+                    error!("{:?}", Report::from_error(err));
+                    std::process::exit(-2);
                 });
+            });
 
-                let move_destination = move_destination.unwrap_or(calling_ae_title);
-                let res = client.move_study(ds_queries, &move_destination);
-                handle.abort();
-                res
-            }
-        };
+            let move_destination = move_destination.unwrap_or(calling_ae_title);
+            let res = client.move_study(&ds_queries.queries, &move_destination);
+            handle.abort();
+            res
+        }
+    };
 
-        // BUG: putting wrong AE title doesn't release/abort association
+    // BUG: putting wrong AE title doesn't release/abort association
 
-        client.release_assoc();
-    */
+    client.release_assoc();
     Ok(())
 }
 
@@ -294,36 +293,26 @@ fn parse_query_tags(
     let mut tags = query_tags
         .iter()
         .map(|t| t.parse::<TermQuery>())
-        .collect::<Result<Vec<TermQuery>, _>>()
+        .collect::<Result<HashSet<TermQuery>, _>>()
         .whatever_context("Could not parse query tags")?;
-    let study_tag: TermQuery = "StudyInstanceUID".parse().unwrap();
+
+    let study_tag: TermQuery = "StudyInstanceUID".parse()?;
     let query_retrieve_level: TermQuery = match level {
         InformationLevel::Patient => "0008,0052=PATIENT",
         InformationLevel::Study | InformationLevel::Series => "0008,0052=STUDY",
     }
-    .parse()
-    .unwrap();
+    .parse()?;
 
-    // always add StudyInstanceUID to be part of responses
-    if !tags.iter().any(|t| t.selector == study_tag.selector) {
-        tags.insert(0, study_tag);
-    } else {
-        warn!("DICOM tag StudyInstanceUID (0020,000D) already added automatically");
+    // implicitly add these two required tags
+    if let Some(old) = tags.replace(study_tag) {
+        warn!("Do not add DICOM tag {old:?} in terminal, it is added automatically");
     }
 
-    // implicitly add required query retrieve level here if not specified as argument
-    if !tags
-        .iter()
-        .any(|t| t.selector == query_retrieve_level.selector)
-    {
-        tags.insert(0, query_retrieve_level);
-    } else {
-        warn!(
-            "DICOM tag QueryRetrieveLevel (0008,0052) already added automatically by --information_level"
-        );
+    if let Some(old) = tags.replace(query_retrieve_level) {
+        warn!("Do not add DICOM tag {old:?} in terminal, it is added automatically");
     }
 
-    Ok(tags)
+    Ok(tags.iter().cloned().collect())
 }
 
 #[derive(Clone)]
