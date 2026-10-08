@@ -1,7 +1,8 @@
 use dicom_core::ops::{ApplyOp, AttributeAction, AttributeOp, AttributeSelector};
-use dicom_core::{DataDictionary, PrimitiveValue};
+use dicom_core::{DataDictionary, PrimitiveValue, Tag};
 use dicom_dictionary_std::StandardDataDictionary;
 use dicom_object::InMemDicomObject;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
@@ -356,9 +357,13 @@ fn merge_tags(datasets: &mut QueryDatasetModel, term_tags: Vec<TermQuery>) {
             }
         }
         QueryDatasetModel::CsvQuery { queries } => {
-            for t in term_tags.iter() {
-                queries.1.insert(t.selector.last_tag());
-            }
+            let mut seen: HashSet<Tag> = HashSet::new();
+            let term_tags = term_tags
+                .iter()
+                .map(|t| t.selector.last_tag())
+                .collect::<Vec<Tag>>();
+            queries.1.extend(term_tags);
+            queries.1.retain(|t| seen.insert(*t));
         }
     }
     // let mut tags = file_tags.iter().map(|t| t.tag).collect::<Vec<Tag>>();
