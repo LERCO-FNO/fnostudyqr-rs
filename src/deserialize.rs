@@ -19,7 +19,17 @@ type TagSet = HashSet<Tag>;
 
 /// JSON: header tags per study
 #[derive(Debug)]
+pub enum DicomQuerySet {
+    Json {
 pub struct JsonStudyQueries(pub Vec<(InMemDicomObject, TagSet)>);
+        queries: Vec<InMemDicomObject>,
+        tags: Vec<TagSet>, // TODO: change this to allow per study tag set/vector
+    },
+    Csv {
+        queries: Vec<InMemDicomObject>,
+        tags: TagSet, // tags shared across all studies
+    },
+}
 
 /// CSV: header tags shared across all studies
 #[derive(Debug)]
