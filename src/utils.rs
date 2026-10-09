@@ -4,14 +4,14 @@ use dicom_core::{
     value::{DicomDate, DicomDateTime, DicomTime},
 };
 use dicom_dictionary_std::tags::QUERY_RETRIEVE_LEVEL;
-use snafu::{OptionExt, ResultExt, Whatever, whatever};
+use snafu::{ResultExt, Whatever, whatever};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
 };
-use tracing::warn;
-
-use crate::FileExtension;
+// use tracing::warn;
+//
+// use crate::QRFileFormat;
 
 pub fn parse_date(date_str: &str) -> Result<String, Whatever> {
     let date = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d")
@@ -46,56 +46,74 @@ pub fn parse_datetime(datetime_str: &str) -> Result<String, Whatever> {
 pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
     let path_ref = Path::new(path);
 
-    // - case 1: path is dir -> check directory exists -> will write as path/to/dir/response.<extension>
-    if path_ref.is_dir() {
-        return to_absolute_path(path_ref);
+    // accept only file paths
+    // if path_ref.is_dir() {
+    //     whatever!("Directory paths not allowed");
+    // }
+
+    if path.ends_with('/')
+        || path.ends_with(std::path::MAIN_SEPARATOR)
+        || path_ref.file_name().is_none()
+    {
+        whatever!("Not a valid file path: {}", path_ref.display());
     }
 
     // - case 2: path is file -> check parent directory exists -> will write as path/to/parent/<filename>.<extension>
-    if path.ends_with(['/', std::path::MAIN_SEPARATOR]) || path_ref.extension().is_none() {
-        whatever!("Directory {path_ref:?} not found")
-    }
+    // if path.ends_with(['/', std::path::MAIN_SEPARATOR]) || path_ref.extension().is_none() {
+    //     whatever!("Directory {path_ref:?} not found")
+    // }
 
     let parent = match path_ref.parent() {
         Some(p) if p.as_os_str().is_empty() => Path::new("."),
         Some(p) => p,
-        None => whatever!("Path {path_ref:?} has no parent"),
+        None => whatever!("Path {} has no parent", path_ref.display()),
     };
+    dbg!(path_ref);
+    dbg!(parent);
 
-    if !parent.is_dir() {
-        whatever!("Parent {parent:?} is not a directory");
-    }
-
-    let file_name = path_ref
-        .file_name()
-        .whatever_context(format!("Invalid path {path_ref:?}"))?;
-    Ok(to_absolute_path(parent)?.join(file_name))
-}
-
-pub fn construct_filepath(path: PathBuf, extension: FileExtension) -> PathBuf {
-    let ext = match extension {
-        FileExtension::Csv => "csv",
-        FileExtension::Json => "json",
-    };
-    if path.is_dir() {
-        path.join("response").with_extension(ext)
+    if parent.is_dir() {
+        std::path::absolute(path_ref).with_whatever_context(|e| format!("{e}"))
     } else {
-        if let Some(extension) = path.extension()
-            && (extension.to_os_string() != ext)
-        {
-            warn!(
-                "--response-path extension {} different from --response-extension {}",
-                extension.display(),
-                ext
-            )
-        }
-        path
+        whatever!("Parent directory not found for {}", path);
     }
+
+    // if !parent.is_dir() {
+    //     whatever!("Parent {parent:?} is not a directory");
+    // }
+
+    // let file_name = path_ref
+    //     .file_name()
+    //     .whatever_context(format!("Invalid path {path_ref:?}"))?;
+    // Ok(to_absolute_path(parent)?.join(file_name))
 }
 
-fn to_absolute_path(path: &Path) -> Result<PathBuf, Whatever> {
-    std::path::absolute(path).with_whatever_context(|e| format!("{e}"))
-}
+// pub fn construct_filepath(path: PathBuf /*, extension: QRFileFormat*/) -> PathBuf {
+//     // let ext = match extension {
+//     //     QRFileFormat::Csv => "csv",
+//     //     QRFileFormat::Json => "json",
+//     // };
+//
+//
+//
+//     if path.is_dir() {
+//         path.join("response").with_extension(ext)
+//     } else {
+//         if let Some(extension) = path.extension()
+//             && (extension.to_os_string() != ext)
+//         {
+//             warn!(
+//                 "--response-path extension {} different from --response-extension {}",
+//                 extension.display(),
+//                 ext
+//             )
+//         }
+//         path
+//     }
+// }
+
+// fn to_absolute_path(path: &Path) -> Result<PathBuf, Whatever> {
+//     std::path::absolute(path).with_whatever_context(|e| format!("{e}"))
+// }
 
 pub fn push_unique_tags(current: &mut Vec<Tag>, extra_tags: &[Tag]) {
     let mut seen: HashSet<Tag> = current.iter().copied().collect();

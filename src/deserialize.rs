@@ -19,7 +19,7 @@ use tracing::warn;
 use crate::error::{CsvSnafu, DeserError, InvalidHeaderTagSnafu, JsonSnafu, OpenFileSnafu};
 use crate::query::TermQuery;
 use crate::utils::{is_output_tag, parse_date_range, parse_datetime, parse_time, push_unique_tags};
-use crate::{DatasetsFromFileSnafu, DeserDatasetsFromFileSnafu, Error, FileExtension};
+use crate::{DatasetsFromFileSnafu, DeserDatasetsFromFileSnafu, Error, QRFileFormat};
 
 #[derive(Debug)]
 pub enum TagScope {
@@ -81,7 +81,7 @@ impl DicomQuerySet {
             .extension()
             .and_then(OsStr::to_str)
             .unwrap_or_default()
-            .parse::<FileExtension>()
+            .parse::<QRFileFormat>()
             .map_err(|reason| DatasetsFromFileSnafu { reason }.build())?;
 
         let file = File::open(&path)
@@ -89,8 +89,8 @@ impl DicomQuerySet {
             .context(DeserDatasetsFromFileSnafu)?;
 
         match file_ext {
-            FileExtension::Csv => queries_from_csv(file),
-            FileExtension::Json => queries_from_json(file), // datasets_from_json(file),
+            QRFileFormat::Csv => queries_from_csv(file),
+            QRFileFormat::Json => queries_from_json(file), // datasets_from_json(file),
         }
         .context(DeserDatasetsFromFileSnafu)
     }
