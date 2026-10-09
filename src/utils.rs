@@ -1,8 +1,17 @@
-use std::path::PathBuf;
-
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use dicom_core::value::{DicomDate, DicomDateTime, DicomTime};
-use snafu::{ResultExt, Whatever, whatever};
+use dicom_core::{
+    Tag,
+    value::{DicomDate, DicomDateTime, DicomTime},
+};
+use dicom_dictionary_std::tags::QUERY_RETRIEVE_LEVEL;
+use snafu::{OptionExt, ResultExt, Whatever, whatever};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
+use tracing::warn;
+
+use crate::FileExtension;
 
 pub fn parse_date(date_str: &str) -> Result<String, Whatever> {
     let date = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d")
@@ -34,16 +43,67 @@ pub fn parse_datetime(datetime_str: &str) -> Result<String, Whatever> {
     Ok(dicom_dt.to_encoded())
 }
 
-pub fn validate_response_filepath(value: &str) -> Result<PathBuf, Whatever> {
-    let path = PathBuf::from(value);
-    if !path.exists() {
-        whatever!("Response path doesn't exist");
+pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
+    let path_ref = Path::new(path);
+
+    // - case 1: path is dir -> check directory exists -> will write as path/to/dir/response.<extension>
+    if path_ref.is_dir() {
+        return to_absolute_path(path_ref);
     }
+
+    // - case 2: path is file -> check parent directory exists -> will write as path/to/parent/<filename>.<extension>
+    if path.ends_with(['/', std::path::MAIN_SEPARATOR]) || path_ref.extension().is_none() {
+        whatever!("Directory {path_ref:?} not found")
+    }
+
+    let parent = match path_ref.parent() {
+        Some(p) if p.as_os_str().is_empty() => Path::new("."),
+        Some(p) => p,
+        None => whatever!("Path {path_ref:?} has no parent"),
+    };
+
+    if !parent.is_dir() {
+        whatever!("Parent {parent:?} is not a directory");
+    }
+
+    let file_name = path_ref
+        .file_name()
+        .whatever_context(format!("Invalid path {path_ref:?}"))?;
+    Ok(to_absolute_path(parent)?.join(file_name))
+}
+
+pub fn construct_filepath(path: PathBuf, extension: FileExtension) -> PathBuf {
+    let ext = match extension {
+        FileExtension::Csv => "csv",
+        FileExtension::Json => "json",
+    };
     if path.is_dir() {
-        Ok(path.join("responses.csv"))
+        path.join("response").with_extension(ext)
     } else {
-        Ok(path)
+        if let Some(extension) = path.extension()
+            && (extension.to_os_string() != ext)
+        {
+            warn!(
+                "--response-path extension {} different from --response-extension {}",
+                extension.display(),
+                ext
+            )
+        }
+        path
     }
+}
+
+fn to_absolute_path(path: &Path) -> Result<PathBuf, Whatever> {
+    std::path::absolute(path).with_whatever_context(|e| format!("{e}"))
+}
+
+pub fn push_unique_tags(current: &mut Vec<Tag>, extra_tags: &[Tag]) {
+    let mut seen: HashSet<Tag> = current.iter().copied().collect();
+    current.extend(extra_tags.iter().copied().filter(|t| seen.insert(*t)));
+}
+
+pub fn is_output_tag(t: &Tag) -> bool {
+    ![QUERY_RETRIEVE_LEVEL].contains(t)
 }
 
 // TODO: possibly add parse_datetime_range()?

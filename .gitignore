@@ -1,7 +1,9 @@
 # editor folders
 /.zed
+/.gram
 
 /target
 /output
 
 *.csv
+*.json

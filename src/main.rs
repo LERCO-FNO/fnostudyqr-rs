@@ -1,10 +1,14 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use snafu::{Report, Whatever, prelude::*};
+use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
+use std::str::FromStr;
 use tracing::{error, info, warn};
 
 mod client;
+mod deserialize;
+mod error;
 mod query;
 mod serialize;
 mod store_async;
@@ -12,9 +16,9 @@ mod utils;
 
 use crate::client::ScuClient;
 use crate::query::*;
-use crate::serialize::write_responses_to_file;
+use crate::serialize::write_responses;
 use crate::store_async::run_store_async;
-use crate::utils::validate_response_filepath;
+use crate::utils::{construct_filepath, validate_response_filepath};
 
 /// DICOM C-FIND/C-MOVE application
 #[derive(Debug, Parser)]
@@ -25,7 +29,7 @@ struct Args {
     addr: String,
     /// Input file containing list of study tags.
     /// Minimum of PatientID and StudyDate are required
-    #[arg(short = 'i', long, global = true)]
+    #[arg(short = 'i', long, value_name = "PATH", global = true)]
     in_study_file: Option<PathBuf>,
     /// Additional sequence of tags
     #[arg(short = 'q', long, global = true)]
@@ -60,21 +64,41 @@ enum InformationLevel {
 #[derive(Subcommand, Debug)]
 enum RequestMode {
     Find {
-        /// Output file containing list of response study tags
-        #[arg(short = 'o', long, value_parser(validate_response_filepath))]
-        response_filepath: PathBuf,
+        /// Path to file/directory to write response tags
+        #[arg(short = 'f', long, value_name = "PATH", value_parser = validate_response_filepath)]
+        out_response_path: Option<PathBuf>,
+        /// Response file extension
+        #[arg(short = 'e', long, default_value = "csv")]
+        file_extension: FileExtension,
     },
     Move {
-        /// C-MOVE destination AE title
-        #[arg(long = "move-destination", required = true)]
-        move_destination: String,
+        /// C-MOVE destination AE title. Defaults to --calling-ae-title
+        #[arg(long = "move-destination")]
+        move_destination: Option<String>,
         /// Store port to listen on
         #[arg(short = 'p', long)]
         store_port: u16,
         /// Output directory for incoming objects
-        #[arg(short = 'o', long, default_value = "./output")]
+        #[arg(short = 'o', long, value_name = "PATH", default_value = "./output")]
         output_dir: PathBuf,
     },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum FileExtension {
+    Csv,
+    Json,
+}
+
+impl FromStr for FileExtension {
+    type Err = String;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "csv" => Ok(FileExtension::Csv),
+            "json" => Ok(FileExtension::Json),
+            _ => Err(format!("Unsupported file extension {value}")),
+        }
+    }
 }
 
 #[derive(Debug, Snafu)]
@@ -89,34 +113,49 @@ enum Error {
         source: dicom_object::ReadError,
     },
 
-    // Could not read DICOM command
+    /// Could not read DICOM command
     ReadCommand {
         source: dicom_object::ReadError,
     },
 
-    // Could not dump DICOM output
+    /// Could not dump DICOM output
     DumpOutput {
         source: std::io::Error,
     },
-    #[snafu(display("File not found at `{}`", file.display()))]
-    FileNotFound {
-        source: csv::Error,
-        file: PathBuf,
+    #[snafu(display("Could not create datasets from file: {reason}"))]
+    DatasetsFromFile {
+        reason: String,
     },
-    #[snafu(display("Could not create datasets from file"))]
-    DatasetsFromFile,
 
-    #[snafu(display("Could not write responses to file `{}`, {source}", path.display()))]
-    WriteResponses {
-        path: PathBuf,
-        source: csv::Error,
+    #[snafu(display("Failed deserializing datasets from file"))]
+    DeserDatasetsFromFile {
+        source: error::DeserError,
     },
 
     NoPresentationContext,
+
     UnsupportedTransferSyntax,
-    UnexpctedSCPResponse,
+
+    UnexpectedSCPResponse,
+
+    NoResponsesToWrite,
+
     #[snafu(display("No response returned"))]
     NoResponseToWrite,
+
+    #[snafu(display("Could not create output file `{}`, {source}", path.display()))]
+    CreateOutputFile {
+        source: std::io::Error,
+        path: PathBuf,
+    },
+    #[snafu(display("{source}"))]
+    SerializeJson {
+        source: serde_json::Error,
+    },
+    #[snafu(display("{source}"))]
+    SerializeCsv {
+        source: csv::Error,
+    },
     #[snafu(whatever, display("{}", message))]
     Other {
         message: String,
@@ -140,9 +179,7 @@ fn run() -> Result<(), Error> {
         query_tag,
         calling_ae_title,
         called_ae_title,
-        // out_study_file,
         information_level,
-        // max_pdu_length,
         verbose,
     } = Args::parse();
 
@@ -159,10 +196,13 @@ fn run() -> Result<(), Error> {
         error!("{}", snafu::Report::from_error(e));
     });
 
-    let query_tags = parse_query_tags(query_tag)
+    let query_tags = parse_query_tags(query_tag, &information_level)
         .whatever_context("Failed to parse query tags from command line")?;
-    let (ds_queries, tag_queries) =
-        build_queries(in_study_file, query_tags, &information_level, verbose)?;
+    let ds_queries = build_queries(
+        in_study_file,
+        query_tags,
+        /*&information_level,*/ verbose,
+    )?;
 
     let mut client = ScuClient::new(
         (&request_mode).into(),
@@ -173,17 +213,36 @@ fn run() -> Result<(), Error> {
         verbose,
     )?;
 
-    info!("Requesting {} query", ds_queries.len());
-    let res = match request_mode {
-        RequestMode::Find { response_filepath } => {
-            let responses = client.find_study(ds_queries)?;
+    info!("Requesting {} query/ies", ds_queries.len());
+    let _query_result = match request_mode {
+        RequestMode::Find {
+            out_response_path: out_response_filepath,
+            file_extension,
+        } => {
+            let res = client.find_study(&ds_queries);
+            let responses = match res {
+                Ok(responses) => {
+                    if responses.is_empty() {
+                        info!("No matches received, nothing to write");
+                        return Ok(());
+                    } else {
+                        responses
+                    }
+                }
+                Err(err) => {
+                    error!("{err}");
+                    return Ok(());
+                }
+            };
 
-            if !responses.is_empty() {
-                write_responses_to_file(response_filepath, responses, tag_queries)
+            let out_file_path = if let Some(out_file_path) = out_response_filepath {
+                construct_filepath(out_file_path, file_extension)
             } else {
-                info!("No responses returned");
-                Err(Error::NoResponseToWrite)
-            }
+                info!("Responses received but no output path given, skipping write");
+                return Ok(());
+            };
+            write_responses(out_file_path, file_extension, &ds_queries, &responses)?;
+            Ok(())
         }
         RequestMode::Move {
             move_destination,
@@ -195,8 +254,8 @@ fn run() -> Result<(), Error> {
                 .build()
                 .unwrap();
             let store_args = StoreScpArgs {
-                calling_ae_title, // was calling_ae_title.clone()
-                output_dir,       // was output_dir.clone()
+                calling_ae_title: calling_ae_title.clone(), // was calling_ae_title.clone()
+                output_dir,                                 // was output_dir.clone()
                 store_port,
                 verbose,
             };
@@ -208,35 +267,46 @@ fn run() -> Result<(), Error> {
                 });
             });
 
-            let _ = client.move_study(ds_queries, &move_destination);
+            let move_destination = move_destination.unwrap_or(calling_ae_title);
+            let res = client.move_study(&ds_queries.queries, &move_destination);
             handle.abort();
-            Ok(())
+            res
         }
     };
 
-    if res.is_err() {
-        error!("{res:?}");
-    }
+    // BUG: putting wrong AE title doesn't release/abort association
 
     client.release_assoc();
-
     Ok(())
 }
 
-fn parse_query_tags(query_tags: Vec<String>) -> Result<Vec<TermQuery>, Whatever> {
+fn parse_query_tags(
+    query_tags: Vec<String>,
+    level: &InformationLevel,
+) -> Result<Vec<TermQuery>, Whatever> {
     let mut tags = query_tags
         .iter()
         .map(|t| t.parse::<TermQuery>())
-        .collect::<Result<Vec<TermQuery>, _>>()
+        .collect::<Result<HashSet<TermQuery>, _>>()
         .whatever_context("Could not parse query tags")?;
-    let study_tag: TermQuery = "StudyInstanceUID".parse().unwrap();
 
-    // always add StudyInstanceUID to be part of responses
-    if !tags.iter().any(|t| t.selector == study_tag.selector) {
-        tags.insert(0, study_tag);
+    let study_tag: TermQuery = "StudyInstanceUID".parse()?;
+    let query_retrieve_level: TermQuery = match level {
+        InformationLevel::Patient => "0008,0052=PATIENT",
+        InformationLevel::Study | InformationLevel::Series => "0008,0052=STUDY",
+    }
+    .parse()?;
+
+    // implicitly add these two required tags
+    if let Some(old) = tags.replace(study_tag) {
+        warn!("Do not add DICOM tag {old:?} in terminal, it is added automatically");
     }
 
-    Ok(tags)
+    if let Some(old) = tags.replace(query_retrieve_level) {
+        warn!("Do not add DICOM tag {old:?} in terminal, it is added automatically");
+    }
+
+    Ok(tags.iter().cloned().collect())
 }
 
 #[derive(Clone)]

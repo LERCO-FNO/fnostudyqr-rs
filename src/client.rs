@@ -14,6 +14,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     DumpOutputSnafu, Error, InformationLevel, InitScuSnafu, ReadCommandSnafu, RequestMode,
+    deserialize::DicomQuerySet,
 };
 
 #[derive(Clone, Copy)]
@@ -29,6 +30,12 @@ impl From<&RequestMode> for Mode {
             RequestMode::Move { .. } => Mode::Move,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct FindResult {
+    pub query_index: usize,
+    pub matches: Vec<InMemDicomObject>,
 }
 
 pub struct ScuClient {
@@ -117,20 +124,23 @@ impl ScuClient {
 
     pub fn find_study(
         &mut self,
-        ds_queries: Vec<InMemDicomObject>,
+        query_set: &DicomQuerySet,
         // out_response_file: PathBuf,
-    ) -> Result<Vec<InMemDicomObject>, Error> {
-        let mut responses: Vec<InMemDicomObject> = Vec::new();
+    ) -> Result<Vec<FindResult>, Error> {
+        // capacity is just a hint, expected to be greater
+        let mut responses = Vec::with_capacity(query_set.len());
 
-        let ds_len = ds_queries.len() as u16;
-        for (ds, index) in ds_queries.into_iter().zip(1..=ds_len) {
-            let cmd = find_req_command(&self.abstract_syntax, index);
+        // let ds_len = ds_queries.len() as u16;
+        for (index, ds_object) in query_set.queries().iter().enumerate() {
+            let msg_id = ((index % u16::MAX as usize) + 1) as u16;
+            let cmd = find_req_command(&self.abstract_syntax, msg_id);
             let mut cmd_data = Vec::with_capacity(128);
             cmd.write_dataset_with_ts(&mut cmd_data, &entries::IMPLICIT_VR_LITTLE_ENDIAN.erased())
                 .whatever_context("Failed to write command")?;
 
             let mut iod_data = Vec::with_capacity(128);
-            ds.write_dataset_with_ts(&mut iod_data, self.ts)
+            ds_object
+                .write_dataset_with_ts(&mut iod_data, self.ts)
                 .whatever_context("Failed to write identifier to dataset")?;
 
             let nbytes = cmd_data.len() + iod_data.len();
@@ -168,6 +178,7 @@ impl ScuClient {
             }
 
             let mut i = 0;
+            let mut matches = Vec::new();
             loop {
                 let rsp_pdu = self
                     .assoc
@@ -245,7 +256,7 @@ impl ScuClient {
                             let status = dcm_obj
                                 .get(tags::STATUS)
                                 .and_then(|el| el.to_int::<u16>().ok());
-                            responses.push(dcm_obj);
+                            matches.push(dcm_obj);
 
                             // check dicom status in response data
                             if status == Some(0) {
@@ -268,10 +279,14 @@ impl ScuClient {
                     | pdu @ Pdu::ReleaseRP
                     | pdu @ Pdu::AbortRQ { .. } => {
                         error!("Unexpected SCP response: {:?}", pdu);
-                        return Err(Error::UnexpctedSCPResponse);
+                        return Err(Error::UnexpectedSCPResponse);
                     }
                 }
             }
+            responses.push(FindResult {
+                query_index: index,
+                matches,
+            });
         }
 
         Ok(responses)
@@ -279,13 +294,13 @@ impl ScuClient {
 
     pub fn move_study(
         &mut self,
-        ds_queries: Vec<InMemDicomObject>,
+        ds_queries: &[InMemDicomObject],
         move_destination: &str,
-    ) -> Result<Vec<InMemDicomObject>, Error> {
-        let mut responses: Vec<InMemDicomObject> = Vec::new();
+    ) -> Result<(), Error> {
+        // let mut responses: Vec<InMemDicomObject> = Vec::new();
 
         let ds_len = ds_queries.len() as u16;
-        for (ds, index) in ds_queries.into_iter().zip(1..=ds_len) {
+        for (ds, index) in ds_queries.iter().zip(1..=ds_len) {
             let cmd = move_req_command(&self.abstract_syntax, move_destination, index);
             let mut cmd_data = Vec::with_capacity(128);
             cmd.write_dataset_with_ts(&mut cmd_data, &entries::IMPLICIT_VR_LITTLE_ENDIAN.erased())
@@ -329,7 +344,7 @@ impl ScuClient {
                 debug!("Awaiting response...");
             }
 
-            let mut i = 0;
+            let mut _i = 0;
             // let mut success = false;
             loop {
                 let rsp_pdu = self
@@ -357,26 +372,18 @@ impl ScuClient {
                         )
                         .context(ReadCommandSnafu)?;
 
-                        if self.verbose {
-                            eprint!("Match #{i} response command:");
-                            DumpOptions::new()
-                                .dump_object_to(stderr(), &cmd_obj)
-                                .context(DumpOutputSnafu)?;
-                        }
-
                         let status = cmd_obj
                             .get(tags::STATUS)
                             .whatever_context("Status code from response is missing")?
                             .to_int::<u16>()
                             .whatever_context("Failed to read status code")?;
-
                         if status == 0 {
                             if self.verbose {
                                 debug!("Matching is complete");
                             }
-                            if i == 0 {
-                                info!("No results matching query");
-                            }
+                            // if i == 0 {
+                            //     info!("No results matching query");
+                            // }
                             // success = true;
                             break;
                         } else if status == 0xFF00 || status == 0xFF01 {
@@ -384,40 +391,7 @@ impl ScuClient {
                                 debug!("Operation pending: 0x{status:X}");
                             }
 
-                            let dcm_obj = if let Some(second_pdata) = data.get(1) {
-                                InMemDicomObject::read_dataset_with_ts(
-                                    second_pdata.data.as_slice(),
-                                    self.ts,
-                                )
-                                .whatever_context("Could not read response data set")?
-                            } else {
-                                let mut rsp = self.assoc.receive_pdata();
-                                let mut response_data = Vec::new();
-                                rsp.read_to_end(&mut response_data)
-                                    .whatever_context("Failed to read response data")?;
-                                InMemDicomObject::read_dataset_with_ts(&response_data[..], self.ts)
-                                    .whatever_context("Could not read response data set")?
-                            };
-
-                            /*println!(
-                                "------------------------ Match #{i} ------------------------"
-                            );
-                            DumpOptions::new()
-                                .dump_object(&dcm_obj)
-                                .context(DumpOutputSnafu)?;*/
-
-                            let status = dcm_obj
-                                .get(tags::STATUS)
-                                .and_then(|el| el.to_int::<u16>().ok());
-                            responses.push(dcm_obj);
-
-                            if status == Some(0) {
-                                if self.verbose {
-                                    debug!("Matching is complete");
-                                }
-                                break;
-                            }
-                            i += 1;
+                            _i += 1;
                         } else {
                             let msg = match status {
                                 0xa701 => "Out of resources (number of matches)",
@@ -442,13 +416,13 @@ impl ScuClient {
                     | pdu @ Pdu::ReleaseRP
                     | pdu @ Pdu::AbortRQ { .. } => {
                         error!("Unexpected SCP response: {:?}", pdu);
-                        return Err(Error::UnexpctedSCPResponse);
+                        return Err(Error::UnexpectedSCPResponse);
                     }
                 }
             }
         }
 
-        Ok(responses)
+        Ok(())
     }
 
     pub fn release_assoc(self) {
