@@ -1,186 +1,223 @@
-use dicom_core::{DataDictionary, DataElement, Tag};
+use dicom_core::header::HasLength;
+use dicom_core::{DataDictionary, DataElement, Tag, VR};
 use dicom_object::{StandardDataDictionary, mem::InMemDicomObject};
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-use snafu::ResultExt;
+use serde::{Serialize, Serializer};
+use snafu::{ResultExt, Snafu};
+use std::fmt;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tracing::{info, warn};
 
 use dicom_core::VR::*;
 
-use crate::FileExtension;
-use crate::{CreateOutputFileSnafu, Error, SerializeCsvSnafu, SerializeJsonSnafu};
+use crate::client::FindResult;
+use crate::deserialize::DicomQuerySet;
+use crate::{CreateOutputFileSnafu, FileExtension};
+use crate::{Error, SerializeCsvSnafu, SerializeJsonSnafu};
 
-pub fn serialize_responses(
-    path: PathBuf,
-    response_datasets: Vec<InMemDicomObject>,
-    tag_queries: Vec<Tag>,
-    file_extension: FileExtension,
-) -> Result<(), Error> {
-    let dict = StandardDataDictionary;
-    let header: Vec<String> = tag_queries
-        .iter()
-        .map(|t| {
-            dict.by_tag(*t)
-                .map(|e| e.alias.to_string())
-                .unwrap_or_else(|| {
-                    // fallback for tag possibly missing in current version of StandardDataDictionary or is private tag
-                    warn!("Tag {t} not found in StandardDataDictionary or is PrivateTag");
-                    t.to_string()
-                })
-        })
-        .collect::<Vec<String>>();
-
-    let values = response_datasets
-        .iter()
-        .map(|ds| extract_tag_values(&tag_queries, ds))
-        .collect::<Vec<Vec<ValueType>>>();
-
-    let data = TagData { header, values };
-
-    match file_extension {
-        FileExtension::Csv => write_to_csv(&path, data),
-        FileExtension::Json => write_to_json(&path, data),
-    }?;
-
-    info!(
-        "Wrote {} responses to {}",
-        response_datasets.len(),
-        path.display()
-    );
-    Ok(())
-}
-
-fn write_to_json(path: &Path, data: TagData) -> Result<(), Error> {
-    let writer = File::create(path).context(CreateOutputFileSnafu { path })?;
-    // reformat to json specific data structure to achieve:
-    // [
-    //  [{"key1", "val", "key2", "val", ...}],
-    //  [...],
-    // ]
-    let TagData { header, values } = data;
-    let data_reformatted: Vec<Map<String, Value>> = values
-        .into_iter()
-        .map(|row| {
-            header
-                .iter()
-                .cloned()
-                .zip(row)
-                .map(|(key, val)| {
-                    let val = serde_json::to_value(val)
-                        .expect("ValueType is a simple enum and always serializes");
-                    (key, val)
-                })
-                .collect()
-        })
-        .collect();
-    serde_json::to_writer_pretty(writer, &data_reformatted).context(SerializeJsonSnafu)
-}
-
-fn write_to_csv(path: &Path, data: TagData) -> Result<(), Error> {
-    let mut writer = csv::WriterBuilder::new()
-        .delimiter(b';')
-        .from_path(path)
-        .map_err(std::io::Error::from)
-        .context(CreateOutputFileSnafu { path })?;
-
-    let TagData { header, values } = data;
-    writer.write_record(&header).context(SerializeCsvSnafu)?;
-    for row in values {
-        let formatted: Vec<String> = row.iter().map(ToString::to_string).collect();
-        writer.write_record(&formatted).context(SerializeCsvSnafu)?;
-    }
-    Ok(())
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 #[serde(untagged)]
-enum ValueType {
-    SignedInteger(i32),
-    UnsignedInteger(u32),
+enum SingleValue {
+    Int(i64),
     Float(f64),
     Text(String),
-    AgeString(String),
-    Error(DicomValueParseError),
 }
 
-impl std::fmt::Display for ValueType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum FieldValue {
+    Empty,
+    One(SingleValue),
+    Many(Vec<SingleValue>),
+}
+
+impl fmt::Display for SingleValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ValueType::SignedInteger(v) => write!(f, "{v}"),
-            ValueType::UnsignedInteger(v) => write!(f, "{v}"),
-            ValueType::Float(v) => write!(f, "{v}"),
-            ValueType::Text(s) | ValueType::AgeString(s) => write!(f, "{s}"),
-            ValueType::Error(e) => write!(f, "{e:?}"), // or a Display impl on DicomValueParseError
+            SingleValue::Int(v) => write!(f, "{v}"),
+            SingleValue::Float(v) => write!(f, "{v}"),
+            SingleValue::Text(v) => f.write_str(v),
         }
     }
 }
 
-pub(crate) struct TagData {
-    header: Vec<String>,
-    values: Vec<Vec<ValueType>>,
+impl fmt::Display for FieldValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FieldValue::Empty => Ok(()),
+            FieldValue::One(v) => write!(f, "{v}"),
+            FieldValue::Many(v) => {
+                for (i, v) in v.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str("\\")?;
+                    }
+                    write!(f, "{v}")?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-enum DicomValueParseError {
-    MissingTag,
-    UnknownVR,
-    InvalidSignedInteger,
-    InvalidFloat,
-    InvalidUnsignedInteger,
-    InvalidDate,
-    InvalidTime,
-    InvalidDateTime,
-    InvalidString,
-    InvalidAgeString,
+struct Row<'a> {
+    keys: &'a [String],
+    values: &'a [FieldValue],
 }
 
-fn extract_tag_values(tags: &[Tag], ds: &InMemDicomObject) -> Vec<ValueType> {
+impl Serialize for Row<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(self.keys.len()))?;
+        for (key, value) in self.keys.iter().zip(self.values) {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
+#[derive(Debug, Snafu)]
+enum SerError {
+    #[snafu(display("Unsupported VR {:?}", vr))]
+    Unsupported { vr: VR },
+    #[snafu(display("Cannot convert {:?} value", vr))]
+    Convert {
+        source: dicom_core::value::ConvertValueError,
+        vr: VR,
+    },
+    Cast {
+        source: dicom_core::value::CastValueError,
+        vr: VR,
+    },
+}
+
+pub fn write_responses(
+    path: PathBuf,
+    output_format: FileExtension,
+    query_set: &DicomQuerySet,
+    responses: &[FindResult],
+) -> Result<(), Error> {
+    let writer = File::create(&path).context(CreateOutputFileSnafu {
+        path: path.to_owned(),
+    })?;
+
+    match output_format {
+        FileExtension::Csv => write_to_csv(writer, query_set, responses),
+        FileExtension::Json => write_to_json(writer, query_set, responses),
+    }?;
+    info!("Written responses to `{}`", path.display());
+    Ok(())
+}
+
+fn write_to_csv<W: std::io::Write>(
+    writer: W,
+    query_set: &DicomQuerySet,
+    responses: &[FindResult],
+) -> Result<(), Error> {
+    let dict = StandardDataDictionary;
+
+    let tags = query_set.all_tags();
+    let header = tags
+        .iter()
+        .map(|t| tag_label(*t, &dict))
+        .collect::<Vec<String>>();
+    let mut writer = csv::WriterBuilder::new()
+        .delimiter(b';')
+        .from_writer(writer);
+    writer.write_record(header).context(SerializeCsvSnafu)?;
+    for obj in responses.iter().flat_map(|r| &r.matches) {
+        let values = extract_row(&tags, obj)
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<String>>();
+        writer.write_record(values).context(SerializeCsvSnafu)?;
+    }
+    Ok(())
+}
+
+fn write_to_json<W: std::io::Write>(
+    writer: W,
+    query_set: &DicomQuerySet,
+    responses: &[FindResult],
+) -> Result<(), Error> {
+    use serde::ser::{SerializeSeq, Serializer};
+    let dict = StandardDataDictionary;
+
+    let mut ser = serde_json::Serializer::pretty(writer);
+    let mut seq = ser.serialize_seq(None).context(SerializeJsonSnafu)?;
+
+    for resp in responses {
+        let tags = query_set.tags_for(resp.query_index);
+        let keys: Vec<String> = tags.iter().map(|&t| tag_label(t, &dict)).collect();
+        for obj in &resp.matches {
+            let values = extract_row(tags, obj);
+            seq.serialize_element(&Row {
+                keys: &keys,
+                values: &values,
+            })
+            .context(SerializeJsonSnafu)?;
+        }
+    }
+    seq.end().context(SerializeJsonSnafu)?;
+    Ok(())
+}
+
+fn extract_row(tags: &[Tag], obj: &InMemDicomObject) -> Vec<FieldValue> {
     tags.iter()
-        .map(|t| match ds.element(*t) {
-            Ok(element) => parse_element_value(element).unwrap_or_else(ValueType::Error),
-            Err(_) => ValueType::Error(DicomValueParseError::MissingTag),
+        .map(|t| match obj.element(*t) {
+            Ok(el) => parse_element(el).unwrap_or_else(|e| {
+                warn!("Tag {t}: {e}, falling back to raw text");
+                el.value().to_str().map_or(FieldValue::Empty, |s| {
+                    FieldValue::One(SingleValue::Text(s.into_owned()))
+                })
+            }),
+            Err(_) => FieldValue::Empty,
         })
         .collect()
 }
 
-fn parse_element_value(
-    element: &DataElement<InMemDicomObject>,
-) -> Result<ValueType, DicomValueParseError> {
-    type V = ValueType;
-    type E = DicomValueParseError;
-    match element.vr() {
-        AE | AS | CS | LO | LT | PN | SH | ST | UI | UR | UT => element
-            .to_str()
-            .map(|s| V::Text(s.to_string()))
-            .map_err(|_| E::InvalidString),
-        IS | SS | SL => element
-            .to_int::<i32>()
-            .map(V::SignedInteger)
-            .map_err(|_| E::InvalidSignedInteger),
-        US | UL => element
-            .to_int::<u32>()
-            .map(V::UnsignedInteger)
-            .map_err(|_| E::InvalidUnsignedInteger),
-        DS | FL | FD => element
-            .to_float64()
-            .map(V::Float)
-            .map_err(|_| E::InvalidFloat),
-        DA => element
-            .to_date()
-            .map(|d| V::Text(d.to_string()))
-            .map_err(|_| E::InvalidDate),
-        TM => element
-            .to_time()
-            .map(|t| V::Text(t.to_string()))
-            .map_err(|_| E::InvalidTime),
-        DT => element
-            .to_datetime()
-            .map(|dt| V::Text(dt.to_string()))
-            .map_err(|_| E::InvalidDateTime),
-        _ => Err(E::UnknownVR),
+fn parse_element(el: &DataElement<InMemDicomObject>) -> Result<FieldValue, SerError> {
+    if el.value().is_empty() {
+        return Ok(FieldValue::Empty);
     }
+
+    let vr = el.vr();
+    let values: Vec<SingleValue> = match vr {
+        AE | AS | CS | LO | LT | PN | SH | ST | UI | UR | UT | UC | DA | TM | DT => el
+            .value()
+            .to_multi_str()
+            .context(CastSnafu { vr })?
+            .iter()
+            .map(|s| SingleValue::Text(s.clone()))
+            .collect(),
+        IS | SS | SL | US | UL => el
+            .value()
+            .to_multi_int::<i64>()
+            .context(ConvertSnafu { vr })?
+            .into_iter()
+            .map(SingleValue::Int)
+            .collect(),
+        DS | FL | FD => el
+            .value()
+            .to_multi_float64()
+            .context(ConvertSnafu { vr })?
+            .into_iter()
+            .map(SingleValue::Float)
+            .collect(),
+        _ => return Err(UnsupportedSnafu { vr }.build()),
+    };
+
+    Ok(match values.len() {
+        0 => FieldValue::Empty,
+        1 => FieldValue::One(values.into_iter().next().unwrap()),
+        _ => FieldValue::Many(values),
+    })
+}
+
+fn tag_label(tag: Tag, dict: &StandardDataDictionary) -> String {
+    dict.by_tag(tag).unwrap().alias.to_string()
 }
 
 #[cfg(test)]

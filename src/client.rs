@@ -14,6 +14,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     DumpOutputSnafu, Error, InformationLevel, InitScuSnafu, ReadCommandSnafu, RequestMode,
+    deserialize::DicomQuerySet,
 };
 
 #[derive(Clone, Copy)]
@@ -29,6 +30,12 @@ impl From<&RequestMode> for Mode {
             RequestMode::Move { .. } => Mode::Move,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct FindResult {
+    pub query_index: usize,
+    pub matches: Vec<InMemDicomObject>,
 }
 
 pub struct ScuClient {
@@ -117,20 +124,23 @@ impl ScuClient {
 
     pub fn find_study(
         &mut self,
-        ds_queries: &[InMemDicomObject],
+        query_set: &DicomQuerySet,
         // out_response_file: PathBuf,
-    ) -> Result<Vec<InMemDicomObject>, Error> {
-        let mut responses: Vec<InMemDicomObject> = Vec::new();
+    ) -> Result<Vec<FindResult>, Error> {
+        // capacity is just a hint, expected to be greater
+        let mut responses = Vec::with_capacity(query_set.len());
 
-        let ds_len = ds_queries.len() as u16;
-        for (ds, index) in ds_queries.iter().zip(1..=ds_len) {
-            let cmd = find_req_command(&self.abstract_syntax, index);
+        // let ds_len = ds_queries.len() as u16;
+        for (index, ds_object) in query_set.queries().iter().enumerate() {
+            let msg_id = ((index % u16::MAX as usize) + 1) as u16;
+            let cmd = find_req_command(&self.abstract_syntax, msg_id);
             let mut cmd_data = Vec::with_capacity(128);
             cmd.write_dataset_with_ts(&mut cmd_data, &entries::IMPLICIT_VR_LITTLE_ENDIAN.erased())
                 .whatever_context("Failed to write command")?;
 
             let mut iod_data = Vec::with_capacity(128);
-            ds.write_dataset_with_ts(&mut iod_data, self.ts)
+            ds_object
+                .write_dataset_with_ts(&mut iod_data, self.ts)
                 .whatever_context("Failed to write identifier to dataset")?;
 
             let nbytes = cmd_data.len() + iod_data.len();
@@ -168,6 +178,7 @@ impl ScuClient {
             }
 
             let mut i = 0;
+            let mut matches = Vec::new();
             loop {
                 let rsp_pdu = self
                     .assoc
@@ -245,7 +256,7 @@ impl ScuClient {
                             let status = dcm_obj
                                 .get(tags::STATUS)
                                 .and_then(|el| el.to_int::<u16>().ok());
-                            responses.push(dcm_obj);
+                            matches.push(dcm_obj);
 
                             // check dicom status in response data
                             if status == Some(0) {
@@ -272,6 +283,10 @@ impl ScuClient {
                     }
                 }
             }
+            responses.push(FindResult {
+                query_index: index,
+                matches,
+            });
         }
 
         Ok(responses)

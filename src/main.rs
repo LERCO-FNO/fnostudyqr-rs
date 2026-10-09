@@ -16,7 +16,7 @@ mod utils;
 
 use crate::client::ScuClient;
 use crate::query::*;
-use crate::serialize::serialize_responses;
+use crate::serialize::write_responses;
 use crate::store_async::run_store_async;
 use crate::utils::{construct_filepath, validate_response_filepath};
 
@@ -122,11 +122,6 @@ enum Error {
     DumpOutput {
         source: std::io::Error,
     },
-    #[snafu(display("File not found at `{}`", file.display()))]
-    FileNotFound {
-        source: csv::Error,
-        file: PathBuf,
-    },
     #[snafu(display("Could not create datasets from file: {reason}"))]
     DatasetsFromFile {
         reason: String,
@@ -150,8 +145,8 @@ enum Error {
 
     #[snafu(display("Could not create output file `{}`, {source}", path.display()))]
     CreateOutputFile {
-        path: PathBuf,
         source: std::io::Error,
+        path: PathBuf,
     },
     #[snafu(display("{source}"))]
     SerializeJson {
@@ -224,7 +219,7 @@ fn run() -> Result<(), Error> {
             out_response_path: out_response_filepath,
             file_extension,
         } => {
-            let res = client.find_study(&ds_queries.queries);
+            let res = client.find_study(&ds_queries);
             let responses = match res {
                 Ok(responses) => {
                     if responses.is_empty() {
@@ -247,7 +242,7 @@ fn run() -> Result<(), Error> {
                 info!("Responses received but no output path given, skipping write");
                 return Ok(());
             };
-            serialize_responses(out_file_path, responses, tag_queries, file_extension)?;
+            write_responses(out_file_path, file_extension, &ds_queries, &responses)?;
             Ok(())
         }
         RequestMode::Move {

@@ -21,8 +21,6 @@ use crate::query::TermQuery;
 use crate::utils::{parse_date_range, parse_datetime, parse_time, push_unique_tags};
 use crate::{DatasetsFromFileSnafu, DeserDatasetsFromFileSnafu, Error, FileExtension};
 
-// type TagSet = HashSet<Tag>;
-
 #[derive(Debug)]
 pub enum TagScope {
     /// CSV: single tags header shared across all studies
@@ -132,7 +130,7 @@ impl DicomQuerySet {
     }
 
     pub fn all_tags(&self) -> Vec<Tag> {
-        match &self.tags {
+        let mut tags = match &self.tags {
             TagScope::Csv(vt) => vt.clone(),
             TagScope::Json(vvt) => {
                 let mut seen = HashSet::new();
@@ -142,22 +140,19 @@ impl DicomQuerySet {
                     .filter(|t| seen.insert(*t))
                     .collect()
             }
-        }
+        };
+        tags.sort();
+        tags
     }
 }
 
 fn tags_of(scope: &TagScope, i: usize) -> &[Tag] {
     match scope {
-        TagScope::Csv(vt) => vt,
-        TagScope::Json(vvt) => &vvt[i],
+        TagScope::Csv(vt) => vt,        // &Vec<Tag>
+        TagScope::Json(vvt) => &vvt[i], // &Vec<Vec<Tag>>
     }
 }
 
-/// CSV: header tags shared across all studies
-/// #[derive(Debug)]
-/// pub struct CsvStudyQueries(pub Vec<InMemDicomObject>, pub Vec<Tag>);
-///
-// #[derive(Debug)]
 struct SingleJsonStudy(InMemDicomObject, Vec<Tag>);
 struct StudyVisitor;
 
@@ -196,7 +191,6 @@ impl<'de> Visitor<'de> for StudyVisitor {
                 ))
             })?;
             elements.push(element);
-            // header_tags.insert(header_tag.tag);
         }
 
         Ok(SingleJsonStudy(
@@ -424,12 +418,6 @@ fn queries_from_csv<R: Read>(reader: R) -> Result<DicomQuerySet, DeserError> {
 
     let dict = StandardDataDictionary;
     let mut tags = Vec::new();
-    // let mut header_tags = reader
-    //     .headers()
-    //     .context(CsvSnafu)?
-    //     .iter()
-    //     .map(|h| resolve_header_tag(&dict, h))
-    //     .collect::<Result<Vec<HeaderTag>, DeserError>>()?;
     let mut seen = HashSet::new();
     for key in reader.headers().context(CsvSnafu)?.iter() {
         let ht = resolve_header_tag(&dict, key)?;
