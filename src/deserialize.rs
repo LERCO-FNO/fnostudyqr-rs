@@ -18,15 +18,15 @@ use tracing::warn;
 
 use crate::error::{CsvSnafu, DeserError, InvalidHeaderTagSnafu, JsonSnafu, OpenFileSnafu};
 use crate::query::TermQuery;
-use crate::utils::{parse_date_range, parse_datetime, parse_time, push_unique_tags};
+use crate::utils::{is_output_tag, parse_date_range, parse_datetime, parse_time, push_unique_tags};
 use crate::{DatasetsFromFileSnafu, DeserDatasetsFromFileSnafu, Error, FileExtension};
 
 #[derive(Debug)]
 pub enum TagScope {
     /// CSV: single tags header shared across all studies
-    Csv(Vec<Tag>),
+    Shared(Vec<Tag>),
     /// JSON: independent tags per study - tags[i] -> query[i]
-    Json(Vec<Vec<Tag>>),
+    PerQuery(Vec<Vec<Tag>>),
 }
 
 #[derive(Debug)]
@@ -43,7 +43,7 @@ impl Default for DicomQuerySet {
             PrimitiveValue::Empty,
         )]);
 
-        let tags = TagScope::Json(vec![vec![tags::STUDY_INSTANCE_UID]]);
+        let tags = TagScope::PerQuery(vec![vec![tags::STUDY_INSTANCE_UID]]);
 
         // JsonStudyQueries(vec![(ds, HashSet::from([tags::STUDY_INSTANCE_UID]))])
         DicomQuerySet {
@@ -55,17 +55,24 @@ impl Default for DicomQuerySet {
 
 impl DicomQuerySet {
     pub fn with_per_query_tags(items: Vec<(InMemDicomObject, Vec<Tag>)>) -> Self {
-        let (queries, tags) = items.into_iter().unzip();
+        let (queries, tags) = items
+            .into_iter()
+            .map(|(obj, mut tags)| {
+                tags.retain(is_output_tag);
+                (obj, tags)
+            })
+            .unzip();
         Self {
             queries,
-            tags: TagScope::Json(tags),
+            tags: TagScope::PerQuery(tags),
         }
     }
 
-    pub fn with_shared_tags(queries: Vec<InMemDicomObject>, tags: Vec<Tag>) -> Self {
+    pub fn with_shared_tags(queries: Vec<InMemDicomObject>, mut tags: Vec<Tag>) -> Self {
+        tags.retain(is_output_tag);
         Self {
             queries,
-            tags: TagScope::Csv(tags),
+            tags: TagScope::Shared(tags),
         }
     }
 
@@ -105,14 +112,19 @@ impl DicomQuerySet {
                 }
             }
         }
+
         Ok(())
     }
 
     pub fn merge_tags(&mut self, extra_tags: Vec<TermQuery>) {
-        let extra_tags: Vec<Tag> = extra_tags.iter().map(|t| t.selector.last_tag()).collect();
+        let extra_tags: Vec<Tag> = extra_tags
+            .iter()
+            .map(|t| t.selector.last_tag())
+            .filter(is_output_tag)
+            .collect();
         match &mut self.tags {
-            TagScope::Csv(vec_of_tags) => push_unique_tags(vec_of_tags, &extra_tags),
-            TagScope::Json(vec_vec_tags) => vec_vec_tags
+            TagScope::Shared(vec_of_tags) => push_unique_tags(vec_of_tags, &extra_tags),
+            TagScope::PerQuery(vec_vec_tags) => vec_vec_tags
                 .iter_mut()
                 .for_each(|vt| push_unique_tags(vt, &extra_tags)),
         }
@@ -131,8 +143,8 @@ impl DicomQuerySet {
 
     pub fn all_tags(&self) -> Vec<Tag> {
         let mut tags = match &self.tags {
-            TagScope::Csv(vt) => vt.clone(),
-            TagScope::Json(vvt) => {
+            TagScope::Shared(vt) => vt.clone(),
+            TagScope::PerQuery(vvt) => {
                 let mut seen = HashSet::new();
                 vvt.iter()
                     .flatten()
@@ -148,8 +160,8 @@ impl DicomQuerySet {
 
 fn tags_of(scope: &TagScope, i: usize) -> &[Tag] {
     match scope {
-        TagScope::Csv(vt) => vt,        // &Vec<Tag>
-        TagScope::Json(vvt) => &vvt[i], // &Vec<Vec<Tag>>
+        TagScope::Shared(vt) => vt,         // &Vec<Tag>
+        TagScope::PerQuery(vvt) => &vvt[i], // &Vec<Vec<Tag>>
     }
 }
 

@@ -235,7 +235,6 @@ fn run() -> Result<(), Error> {
                 }
             };
 
-            // TODO: finish refactoring these serializing functions
             let out_file_path = if let Some(out_file_path) = out_response_filepath {
                 construct_filepath(out_file_path, file_extension)
             } else {
