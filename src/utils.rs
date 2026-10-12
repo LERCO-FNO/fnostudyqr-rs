@@ -69,30 +69,6 @@ pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
     }
 }
 
-// pub fn construct_filepath(path: PathBuf /*, extension: QRFileFormat*/) -> PathBuf {
-//     // let ext = match extension {
-//     //     QRFileFormat::Csv => "csv",
-//     //     QRFileFormat::Json => "json",
-//     // };
-//
-//
-//
-//     if path.is_dir() {
-//         path.join("response").with_extension(ext)
-//     } else {
-//         if let Some(extension) = path.extension()
-//             && (extension.to_os_string() != ext)
-//         {
-//             warn!(
-//                 "--response-path extension {} different from --response-extension {}",
-//                 extension.display(),
-//                 ext
-//             )
-//         }
-//         path
-//     }
-// }
-
 pub fn push_unique_tags(current: &mut Vec<Tag>, extra_tags: &[Tag]) {
     let mut seen: HashSet<Tag> = current.iter().copied().collect();
     current.extend(extra_tags.iter().copied().filter(|t| seen.insert(*t)));

@@ -18,7 +18,7 @@ use crate::client::ScuClient;
 use crate::query::*;
 use crate::serialize::write_responses;
 use crate::store_async::run_store_async;
-use crate::utils::{/*construct_filepath,*/ validate_response_filepath};
+use crate::utils::validate_response_filepath;
 
 /// DICOM C-FIND/C-MOVE application
 #[derive(Debug, Parser)]
@@ -214,7 +214,6 @@ fn run() -> Result<(), Error> {
     let _query_result = match request_mode {
         RequestMode::Find {
             out_response_path: out_response_filepath,
-            // file_extension,
         } => {
             let res = client.find_study(&ds_queries);
             let responses = match res {
@@ -230,7 +229,6 @@ fn run() -> Result<(), Error> {
             };
 
             if let Some(out_file_path) = out_response_filepath {
-                // construct_filepath(out_file_path, file_extension)
                 write_responses(out_file_path, &ds_queries, &responses)?;
             } else {
                 warn!(
