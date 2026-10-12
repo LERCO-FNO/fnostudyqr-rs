@@ -1,6 +1,6 @@
 use std::collections::HashSet;
-use std::io::Read;
 use std::fmt;
+use std::io::Read;
 
 use dicom_core::dictionary::{DataDictionary, DataDictionaryEntry};
 use dicom_core::{DataElement, PrimitiveValue, Tag, VR};
@@ -39,24 +39,6 @@ impl HeaderTag {
     }
 }
 
-// fn resolve_header_tag(
-//     dict: &StandardDataDictionary,
-//     header: &str,
-// ) -> Result<HeaderTag, DeserError> {
-//     let entry = dict
-//         .by_expr(header)
-//         .context(InvalidHeaderTagSnafu { header })?;
-//     let vr = entry
-//         .vr()
-//         .exact()
-//         .whatever_context(format!("Unsupported VR for tag: {}", entry.tag()))?;
-//
-//     Ok(HeaderTag {
-//         tag: entry.tag(),
-//         vr,
-//     })
-// }
-//
 struct SingleJsonStudy(InMemDicomObject, Vec<Tag>);
 struct StudyVisitor;
 
