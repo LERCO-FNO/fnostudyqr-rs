@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 use std::io::Read;
-use std::{fmt, str::FromStr};
+use std::fmt;
 
 use dicom_core::dictionary::{DataDictionary, DataDictionaryEntry};
 use dicom_core::{DataElement, PrimitiveValue, Tag, VR};
 use dicom_dictionary_std::StandardDataDictionary;
-use dicom_object::{InMemDicomObject, mem::InMemElement};
+use dicom_object::InMemDicomObject;
 use serde::Deserialize;
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::Value;
