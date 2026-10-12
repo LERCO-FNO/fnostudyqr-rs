@@ -18,7 +18,7 @@ use crate::client::ScuClient;
 use crate::query::*;
 use crate::serialize::write_responses;
 use crate::store_async::run_store_async;
-use crate::utils::{construct_filepath, validate_response_filepath};
+use crate::utils::validate_response_filepath;
 
 /// DICOM C-FIND/C-MOVE application
 #[derive(Debug, Parser)]
@@ -67,9 +67,6 @@ enum RequestMode {
         /// Path to file/directory to write response tags
         #[arg(short = 'f', long, value_name = "PATH", value_parser = validate_response_filepath)]
         out_response_path: Option<PathBuf>,
-        /// Response file extension
-        #[arg(short = 'e', long, default_value = "csv")]
-        file_extension: FileExtension,
     },
     Move {
         /// C-MOVE destination AE title. Defaults to --calling-ae-title
@@ -85,17 +82,17 @@ enum RequestMode {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
-enum FileExtension {
+enum IOFileFormat {
     Csv,
     Json,
 }
 
-impl FromStr for FileExtension {
+impl FromStr for IOFileFormat {
     type Err = String;
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "csv" => Ok(FileExtension::Csv),
-            "json" => Ok(FileExtension::Json),
+            "csv" => Ok(IOFileFormat::Csv),
+            "json" => Ok(IOFileFormat::Json),
             _ => Err(format!("Unsupported file extension {value}")),
         }
     }
@@ -217,31 +214,28 @@ fn run() -> Result<(), Error> {
     let _query_result = match request_mode {
         RequestMode::Find {
             out_response_path: out_response_filepath,
-            file_extension,
         } => {
             let res = client.find_study(&ds_queries);
             let responses = match res {
-                Ok(responses) => {
-                    if responses.is_empty() {
-                        info!("No matches received, nothing to write");
-                        return Ok(());
-                    } else {
-                        responses
-                    }
+                Ok(responses) if responses.is_empty() => {
+                    info!("No matches received, nothing to write");
+                    return Ok(());
                 }
+                Ok(responses) => responses,
                 Err(err) => {
                     error!("{err}");
                     return Ok(());
                 }
             };
 
-            let out_file_path = if let Some(out_file_path) = out_response_filepath {
-                construct_filepath(out_file_path, file_extension)
+            if let Some(out_file_path) = out_response_filepath {
+                write_responses(out_file_path, &ds_queries, &responses)?;
             } else {
-                info!("Responses received but no output path given, skipping write");
-                return Ok(());
+                warn!(
+                    "Received {} response(s) but no output response path was given; responses were not written",
+                    responses.len()
+                );
             };
-            write_responses(out_file_path, file_extension, &ds_queries, &responses)?;
             Ok(())
         }
         RequestMode::Move {

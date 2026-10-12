@@ -4,14 +4,11 @@ use dicom_core::{
     value::{DicomDate, DicomDateTime, DicomTime},
 };
 use dicom_dictionary_std::tags::QUERY_RETRIEVE_LEVEL;
-use snafu::{OptionExt, ResultExt, Whatever, whatever};
+use snafu::{ResultExt, Whatever, whatever};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
 };
-use tracing::warn;
-
-use crate::FileExtension;
 
 pub fn parse_date(date_str: &str) -> Result<String, Whatever> {
     let date = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d")
@@ -44,57 +41,32 @@ pub fn parse_datetime(datetime_str: &str) -> Result<String, Whatever> {
 }
 
 pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
+    // accept only valid file paths with existing parent directory
+    // directory or possible directory paths are not allowed
     let path_ref = Path::new(path);
 
-    // - case 1: path is dir -> check directory exists -> will write as path/to/dir/response.<extension>
-    if path_ref.is_dir() {
-        return to_absolute_path(path_ref);
-    }
-
-    // - case 2: path is file -> check parent directory exists -> will write as path/to/parent/<filename>.<extension>
-    if path.ends_with(['/', std::path::MAIN_SEPARATOR]) || path_ref.extension().is_none() {
-        whatever!("Directory {path_ref:?} not found")
+    if path_ref.is_dir() || path.ends_with(['/', std::path::MAIN_SEPARATOR]) {
+        whatever!("Directory path not allowed: `{}`", path_ref.display());
+    } else if path_ref.extension().is_none() {
+        // in case required extension is missing or path is
+        // non-existing directory
+        whatever!(
+            "Path appears file like but has no extension: `{}`",
+            path_ref.display()
+        )
     }
 
     let parent = match path_ref.parent() {
         Some(p) if p.as_os_str().is_empty() => Path::new("."),
         Some(p) => p,
-        None => whatever!("Path {path_ref:?} has no parent"),
+        None => whatever!("Path `{}` has no parent", path_ref.display()),
     };
 
-    if !parent.is_dir() {
-        whatever!("Parent {parent:?} is not a directory");
-    }
-
-    let file_name = path_ref
-        .file_name()
-        .whatever_context(format!("Invalid path {path_ref:?}"))?;
-    Ok(to_absolute_path(parent)?.join(file_name))
-}
-
-pub fn construct_filepath(path: PathBuf, extension: FileExtension) -> PathBuf {
-    let ext = match extension {
-        FileExtension::Csv => "csv",
-        FileExtension::Json => "json",
-    };
-    if path.is_dir() {
-        path.join("response").with_extension(ext)
+    if parent.is_dir() {
+        std::path::absolute(path_ref).with_whatever_context(|e| format!("{e}"))
     } else {
-        if let Some(extension) = path.extension()
-            && (extension.to_os_string() != ext)
-        {
-            warn!(
-                "--response-path extension {} different from --response-extension {}",
-                extension.display(),
-                ext
-            )
-        }
-        path
+        whatever!("Parent directory not found for `{}`", path);
     }
-}
-
-fn to_absolute_path(path: &Path) -> Result<PathBuf, Whatever> {
-    std::path::absolute(path).with_whatever_context(|e| format!("{e}"))
 }
 
 pub fn push_unique_tags(current: &mut Vec<Tag>, extra_tags: &[Tag]) {
@@ -108,3 +80,34 @@ pub fn is_output_tag(t: &Tag) -> bool {
 
 // TODO: possibly add parse_datetime_range()?
 // TODO: possibly add parse_time-range()? is it needed?
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_valid_response_path() {
+        let path = "./response.json";
+        let res = validate_response_filepath(path);
+        assert!(res.is_ok());
+
+        let path = "/home/vojt/prace/fnostudyqr-rs/response.json";
+        let res = validate_response_filepath(path);
+        assert!(res.is_ok())
+    }
+
+    #[test]
+    fn is_invalid_response_path() {
+        let path = ".";
+        let res = validate_response_filepath(path);
+        assert!(res.is_err());
+
+        let path = std::env::current_dir()
+            .expect("Expected current directory")
+            .to_str()
+            .expect("Expected current directory as &str")
+            .to_owned();
+        let res = validate_response_filepath(&path);
+        assert!(res.is_err());
+    }
+}
