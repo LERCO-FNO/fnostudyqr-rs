@@ -124,9 +124,10 @@ enum Error {
         reason: String,
     },
 
-    #[snafu(display("Failed deserializing datasets from file"))]
+    #[snafu(display("Failed deserializing datasets from file `{}`", path.display()))]
     DeserDatasetsFromFile {
         source: error::DeserError,
+        path: PathBuf,
     },
 
     NoPresentationContext,
@@ -217,10 +218,15 @@ fn run() -> Result<(), Error> {
         } => {
             let res = client.find_study(&ds_queries);
             let responses = match res {
-                Ok(responses) if responses.is_empty() => {
+                // case 1: Vec<FindResult> is empty
+                // case 2: Vec<FindResult> not empty AND all FindResult empty -> no matches
+                Ok(responses)
+                    if responses.is_empty() || responses.iter().all(|r| r.matches.is_empty()) =>
+                {
                     info!("No matches received, nothing to write");
                     return Ok(());
                 }
+                // case 3: Vec<FindResult> not empty and any FindResult not empty
                 Ok(responses) => responses,
                 Err(err) => {
                     error!("{err}");
@@ -287,7 +293,8 @@ fn parse_query_tags(
     let study_tag: TermQuery = "StudyInstanceUID".parse()?;
     let query_retrieve_level: TermQuery = match level {
         InformationLevel::Patient => "0008,0052=PATIENT",
-        InformationLevel::Study | InformationLevel::Series => "0008,0052=STUDY",
+        InformationLevel::Study => "0008,0052=STUDY",
+        InformationLevel::Series => "0008,0052=SERIES",
     }
     .parse()?;
 
