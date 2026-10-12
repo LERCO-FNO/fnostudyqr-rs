@@ -14,8 +14,7 @@ A CLI query/retrieve tool for a bulk of DICOM studies.
 
 ##### `find`-only options
 
-* `-f, --out-response-path <PATH>`: Path to file/directory to write response tags. If not given no responses are written.
-* -e, --file-extension <FILE_EXTENSION>: Response file extension, supports `[csv, json]`. Defaults to `csv`.
+* `-f, --out-response-path <PATH>`: File path to write response tags. If not given no responses are written.
 
 ##### Find example
 
@@ -23,7 +22,7 @@ A CLI query/retrieve tool for a bulk of DICOM studies.
 
 ##### `move`-only options
 
-* `--move-destination <AE>`: Destination application entity title. Must be equal to `--calling-ae-title` if destination is caller.
+* `--move-destination <AE>`: Destination application entity title. Defaults to `--calling-ae-title` if destination is caller
 * `-p, --store-port <PORT>`: Store port to listen on if destination is caller.
 * `-o, --output-dir <PATH>`: Output directory for incoming objects. Defaults to `./output`.
 
@@ -35,35 +34,74 @@ A CLI query/retrieve tool for a bulk of DICOM studies.
 
 ##### Input file specifications
 
-* Required file format is `.csv` with semicolon `;` separator.
-Tags can be specified as keyword or hex value `(gggg,eeee)` with leading zeroes, ex. `PatientID`, `(0010,0020)` or `0010,0020`.
-* Find request may contain any DICOM tags up to the requested information level, eg.: requesting PatientID and StudyDate at level `series` will match to all series per requested study. Value matching is case-sensitive.
-* Empty tag value will be overwritten by matching `<query-tag>` value.
-* Format of date elements must be *YYYY-MM-DD* and time elements *H:M:S*, including leading zeroes, otherwise values will be incorrectly matched.
+* Required file format is `.csv` with semicolon `;` separator or `.json`. Specify tags as keyword or hex value `(gggg,eeee)` with leading zeroes, ex. `PatientID`, `(0010,0020)` or `0010,0020`.
+* Find request may contain any DICOM tags up to the requested information level, eg.: requesting PatientID and StudyDate at level `series` will match to and return all series per requested study. Value matching is case-sensitive.
+* `TagKey=value` from terminal will be added to all query DICOM objects if not already present. Present tag with empty value (eg. `Modality=""` or `Modality=`) is not overwritten. Empty values can be empty strings `"", null, nan` (case-insensitive).
+* Format of date elements **must be** `YYYY-MM-DD` and time elements `H:M:S`, including leading zeroes, otherwise values will be incorrectly matched.
+* Per object query retrieval supported only for **JSON** file format and **find** command.
 
-##### Example input file
+##### Example input files
 
 ```csv
 PatientID;(0008,0020);StudyInstanceUID
-01;20050101;
-02;20050101;
+01;1.2.3.4.5;
+02;6.7.8.9.1;
+```
+
+```json
+[
+  {
+    "QueryRetrieveLevel": "STUDY", // per object query level supported
+    "StudyInstanceUID": "1.2.3.4.5"
+    "Modality": "" // empty value
+  },
+  {
+    "StudyInstanceUID": "6.7.8.9.1",
+    "SeriesNumber": "1\\2\\3", // study filtered by any of these
+    "QueryRetrieveLevel": "SERIES"
+  }
+]
 ```
 
 ##### Example output file
 
 ```csv
-PatientID;StudyDate;StudyDescription;...
-01;20050101;AbdomenLungRoutine
-02;20050101;HeadCT
+PatientID;StudyInstanceUID;StudyDescription;...
+01;1.2.3.4.5;AbdomenLungRoutine
+02;6.7.8.9.1;HeadCT
 ```
 
-* File tags precede command line tags.
+```json
+[
+  {
+    "StudyInstanceUID": "1.2.3.4.5",
+    "Modality": "CT"
+  },
+  {
+    "StudyInstanceUID": "6.7.8.9.1",
+    "SeriesNumber": 1,
+    "Modality": "CT"
+  },
+  {
+    "StudyInstanceUID": "6.7.8.9.1",
+    "SeriesNumber": 2,
+    "Modality": "CT"
+  },
+  {
+    "StudyInstanceUID": "6.7.8.9.1",
+    "SeriesNumber": 3,
+    "Modality": "CT"
+  }
+]
+```
+
+* Output tags sorted in ascending order.
 
 ##### Value matching
 
-* Tag values in input file and command line allow for pattern matching with asterisk `*`.
-* Separate date and time values (command line or input file) allow for range matching. Use double-period `..` to specify date or time range. For example, `-t StudyDate=2000-01-01..` (YYYY-MM-DD) will match all studies since this date 1st January 2000.
+* Pattern matching supported with asterisk `(*)` for both input file and terminal.
+* Separate date and time values (terminal or input file) allow for range matching. Use double-period `..` to specify date or time range. For example `-q StudyDate=2000-01-01..` (YYYY-MM-DD format) will match all studies since 1st January 2000.
 
 ## Acknowledgement
 
-This command line tool uses [dicom-rs's](https://github.com/Enet4/dicom-rs) *findscu* and *movescu* crates, combining them as one application. This repository only adds/changes some parts to allow querying/requesting a list of studies within a single runtime.
+This terminal tool uses [dicom-rs's](https://github.com/Enet4/dicom-rs) *findscu* and *movescu* crates, combining them as one application. This repository only adds/changes some parts to allow querying/requesting a list of studies within a single runtime.
