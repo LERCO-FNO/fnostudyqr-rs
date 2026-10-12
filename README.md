@@ -48,7 +48,7 @@ PatientID;(0008,0020);StudyInstanceUID
 02;6.7.8.9.1;
 ```
 
-```json
+```jsonc
 [
   {
     "QueryRetrieveLevel": "STUDY", // per object query level supported
@@ -79,18 +79,15 @@ PatientID;StudyInstanceUID;StudyDescription;...
   },
   {
     "StudyInstanceUID": "6.7.8.9.1",
-    "SeriesNumber": 1,
-    "Modality": "CT"
+    "SeriesNumber": 1
   },
   {
     "StudyInstanceUID": "6.7.8.9.1",
-    "SeriesNumber": 2,
-    "Modality": "CT"
+    "SeriesNumber": 2
   },
   {
     "StudyInstanceUID": "6.7.8.9.1",
-    "SeriesNumber": 3,
-    "Modality": "CT"
+    "SeriesNumber": 3
   }
 ]
 ```
