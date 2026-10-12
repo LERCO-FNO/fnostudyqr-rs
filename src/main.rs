@@ -82,17 +82,17 @@ enum RequestMode {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
-enum QRFileFormat {
+enum IOFileFormat {
     Csv,
     Json,
 }
 
-impl FromStr for QRFileFormat {
+impl FromStr for IOFileFormat {
     type Err = String;
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "csv" => Ok(QRFileFormat::Csv),
-            "json" => Ok(QRFileFormat::Json),
+            "csv" => Ok(IOFileFormat::Csv),
+            "json" => Ok(IOFileFormat::Json),
             _ => Err(format!("Unsupported file extension {value}")),
         }
     }

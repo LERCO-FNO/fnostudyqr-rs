@@ -12,7 +12,7 @@ use dicom_core::VR::*;
 
 use crate::client::FindResult;
 use crate::deserialize::DicomQuerySet;
-use crate::{CreateOutputFileSnafu, QRFileFormat};
+use crate::{CreateOutputFileSnafu, IOFileFormat};
 use crate::{Error, SerializeCsvSnafu, SerializeJsonSnafu};
 
 #[derive(Debug, Serialize)]
@@ -105,15 +105,15 @@ pub fn write_responses(
 
     let output_file_format = path
         .extension()
-        .unwrap() // file path is already validated
+        .unwrap() // file path and extension is already validated
         .to_str()
         .unwrap()
-        .parse::<QRFileFormat>()
+        .parse::<IOFileFormat>()
         .with_whatever_context(|e| e.to_string())?;
 
     match output_file_format {
-        QRFileFormat::Csv => write_to_csv(writer, query_set, responses),
-        QRFileFormat::Json => write_to_json(writer, query_set, responses),
+        IOFileFormat::Csv => write_to_csv(writer, query_set, responses),
+        IOFileFormat::Json => write_to_json(writer, query_set, responses),
     }?;
     info!("Written responses to `{}`", path.display());
     Ok(())

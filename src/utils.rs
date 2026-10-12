@@ -11,7 +11,6 @@ use std::{
 };
 // use tracing::warn;
 //
-// use crate::QRFileFormat;
 
 pub fn parse_date(date_str: &str) -> Result<String, Whatever> {
     let date = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d")
