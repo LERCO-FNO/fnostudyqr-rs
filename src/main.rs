@@ -233,8 +233,10 @@ fn run() -> Result<(), Error> {
                 // construct_filepath(out_file_path, file_extension)
                 write_responses(out_file_path, &ds_queries, &responses)?;
             } else {
-                info!("Responses received but no output path given, skipping write");
-                // return Ok(());
+                warn!(
+                    "Received {} response(s) but no output response path was given; responses were not written",
+                    responses.len()
+                );
             };
             Ok(())
         }
