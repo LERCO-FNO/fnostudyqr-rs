@@ -218,14 +218,11 @@ fn run() -> Result<(), Error> {
         } => {
             let res = client.find_study(&ds_queries);
             let responses = match res {
-                Ok(responses) => {
-                    if responses.is_empty() {
-                        info!("No matches received, nothing to write");
-                        return Ok(());
-                    } else {
-                        responses
-                    }
+                Ok(responses) if responses.is_empty() => {
+                    info!("No matches received, nothing to write");
+                    return Ok(());
                 }
+                Ok(responses) => responses,
                 Err(err) => {
                     error!("{err}");
                     return Ok(());
