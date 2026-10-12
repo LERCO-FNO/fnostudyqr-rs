@@ -68,8 +68,6 @@ pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
         Some(p) => p,
         None => whatever!("Path `{}` has no parent", path_ref.display()),
     };
-    dbg!(path_ref);
-    dbg!(parent);
 
     if parent.is_dir() {
         std::path::absolute(path_ref).with_whatever_context(|e| format!("{e}"))
@@ -126,3 +124,34 @@ pub fn is_output_tag(t: &Tag) -> bool {
 
 // TODO: possibly add parse_datetime_range()?
 // TODO: possibly add parse_time-range()? is it needed?
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_valid_response_path() {
+        let path = "./response.json";
+        let res = validate_response_filepath(path);
+        assert!(res.is_ok());
+
+        let path = "/home/vojt/prace/fnostudyqr-rs/response.json";
+        let res = validate_response_filepath(path);
+        assert!(res.is_ok())
+    }
+
+    #[test]
+    fn is_invalid_response_path() {
+        let path = ".";
+        let res = validate_response_filepath(path);
+        assert!(res.is_err());
+
+        let path = std::env::current_dir()
+            .expect("Expected current directory")
+            .to_str()
+            .expect("Expected current directory as &str")
+            .to_owned();
+        let res = validate_response_filepath(&path);
+        assert!(res.is_err());
+    }
+}
