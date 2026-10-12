@@ -9,8 +9,6 @@ use std::{
     collections::HashSet,
     path::{Path, PathBuf},
 };
-// use tracing::warn;
-//
 
 pub fn parse_date(date_str: &str) -> Result<String, Whatever> {
     let date = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d")
@@ -43,24 +41,20 @@ pub fn parse_datetime(datetime_str: &str) -> Result<String, Whatever> {
 }
 
 pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
+    // accept only valid file paths with existing parent directory
+    // directory or possible directory paths are not allowed
     let path_ref = Path::new(path);
 
-    // accept only file paths
-    // if path_ref.is_dir() {
-    //     whatever!("Directory paths not allowed");
-    // }
-    if path_ref.is_dir()
-        || path.ends_with(['/', std::path::MAIN_SEPARATOR])
-        // || path.ends_with(std::path::MAIN_SEPARATOR)
-        || path_ref.file_name().is_none()
-    {
+    if path_ref.is_dir() || path.ends_with(['/', std::path::MAIN_SEPARATOR]) {
         whatever!("Directory path not allowed: `{}`", path_ref.display());
+    } else if path_ref.extension().is_none() {
+        // in case required extension is missing or path is
+        // non-existing directory
+        whatever!(
+            "Path appears file like but has no extension: `{}`",
+            path_ref.display()
+        )
     }
-
-    // - case 2: path is file -> check parent directory exists -> will write as path/to/parent/<filename>.<extension>
-    // if path.ends_with(['/', std::path::MAIN_SEPARATOR]) || path_ref.extension().is_none() {
-    //     whatever!("Directory {path_ref:?} not found")
-    // }
 
     let parent = match path_ref.parent() {
         Some(p) if p.as_os_str().is_empty() => Path::new("."),
@@ -73,15 +67,6 @@ pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
     } else {
         whatever!("Parent directory not found for `{}`", path);
     }
-
-    // if !parent.is_dir() {
-    //     whatever!("Parent {parent:?} is not a directory");
-    // }
-
-    // let file_name = path_ref
-    //     .file_name()
-    //     .whatever_context(format!("Invalid path {path_ref:?}"))?;
-    // Ok(to_absolute_path(parent)?.join(file_name))
 }
 
 // pub fn construct_filepath(path: PathBuf /*, extension: QRFileFormat*/) -> PathBuf {
@@ -106,10 +91,6 @@ pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
 //         }
 //         path
 //     }
-// }
-
-// fn to_absolute_path(path: &Path) -> Result<PathBuf, Whatever> {
-//     std::path::absolute(path).with_whatever_context(|e| format!("{e}"))
 // }
 
 pub fn push_unique_tags(current: &mut Vec<Tag>, extra_tags: &[Tag]) {
