@@ -14,7 +14,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     DumpOutputSnafu, Error, InformationLevel, InitScuSnafu, ReadCommandSnafu, RequestMode,
-    deserialize::DicomQuerySet,
+    query::DicomQuerySet,
 };
 
 #[derive(Clone, Copy)]

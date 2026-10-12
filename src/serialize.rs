@@ -11,7 +11,7 @@ use tracing::{info, warn};
 use dicom_core::VR::*;
 
 use crate::client::FindResult;
-use crate::deserialize::DicomQuerySet;
+use crate::query::DicomQuerySet;
 use crate::{CreateOutputFileSnafu, IOFileFormat};
 use crate::{Error, SerializeCsvSnafu, SerializeJsonSnafu};
 

@@ -1,14 +1,163 @@
-use dicom_core::DataDictionary;
-use dicom_core::ops::AttributeSelector;
-use dicom_dictionary_std::StandardDataDictionary;
+use dicom_core::ops::{ApplyOp, AttributeAction, AttributeOp, AttributeSelector};
+use dicom_core::{DataDictionary, DataElement, PrimitiveValue, Tag, VR};
+use dicom_dictionary_std::{StandardDataDictionary, tags::STUDY_INSTANCE_UID};
+use dicom_object::InMemDicomObject;
+use std::collections::HashSet;
+use std::ffi::OsStr;
+use std::fs::File;
 use std::path::PathBuf;
 
 use snafu::{OptionExt, ResultExt, Whatever};
 use std::str::FromStr;
 
-use crate::Error;
-use crate::deserialize::DicomQuerySet;
+use crate::deserialize::{queries_from_csv, queries_from_json, term_to_value};
+use crate::error::OpenFileSnafu;
+use crate::utils::{is_output_tag, push_unique_tags};
+use crate::{DatasetsFromFileSnafu, DeserDatasetsFromFileSnafu, Error, IOFileFormat};
 
+#[derive(Debug)]
+pub enum TagScope {
+    /// CSV: single tags header shared across all studies
+    Shared(Vec<Tag>),
+    /// JSON: independent tags per study - tags[i] -> query[i]
+    PerQuery(Vec<Vec<Tag>>),
+}
+
+#[derive(Debug)]
+pub struct DicomQuerySet {
+    pub queries: Vec<InMemDicomObject>,
+    pub tags: TagScope,
+}
+
+impl Default for DicomQuerySet {
+    fn default() -> Self {
+        let ds = InMemDicomObject::from_element_iter([DataElement::new(
+            STUDY_INSTANCE_UID,
+            VR::UI,
+            PrimitiveValue::Empty,
+        )]);
+
+        let tags = TagScope::PerQuery(vec![vec![STUDY_INSTANCE_UID]]);
+
+        // JsonStudyQueries(vec![(ds, HashSet::from([tags::STUDY_INSTANCE_UID]))])
+        DicomQuerySet {
+            queries: vec![ds],
+            tags,
+        }
+    }
+}
+
+impl DicomQuerySet {
+    pub fn with_per_query_tags(items: Vec<(InMemDicomObject, Vec<Tag>)>) -> Self {
+        let (queries, tags) = items
+            .into_iter()
+            .map(|(obj, mut tags)| {
+                tags.retain(is_output_tag);
+                (obj, tags)
+            })
+            .unzip();
+        Self {
+            queries,
+            tags: TagScope::PerQuery(tags),
+        }
+    }
+
+    pub fn with_shared_tags(queries: Vec<InMemDicomObject>, mut tags: Vec<Tag>) -> Self {
+        tags.retain(is_output_tag);
+        Self {
+            queries,
+            tags: TagScope::Shared(tags),
+        }
+    }
+
+    pub fn queries_from_file(path: PathBuf) -> Result<Self, Error> {
+        let file_ext = path
+            .extension()
+            .and_then(OsStr::to_str)
+            .unwrap_or_default()
+            .parse::<IOFileFormat>()
+            .map_err(|reason| DatasetsFromFileSnafu { reason }.build())?;
+
+        let file = File::open(&path)
+            .context(OpenFileSnafu { path })
+            .context(DeserDatasetsFromFileSnafu)?;
+
+        match file_ext {
+            IOFileFormat::Csv => queries_from_csv(file),
+            IOFileFormat::Json => queries_from_json(file), // datasets_from_json(file),
+        }
+        .context(DeserDatasetsFromFileSnafu)
+    }
+
+    pub fn add_terminal_tags(&mut self, term_tags: &[TermQuery]) -> Result<(), crate::Error> {
+        for t in term_tags {
+            let value = term_to_value(t.selector.last_tag(), &t.value)
+                .whatever_context("failed overriding tags")?;
+
+            for ds in self.queries.iter_mut() {
+                if ds.get(t.selector.last_tag()).is_none() {
+                    ds.apply(AttributeOp::new(
+                        t.selector.clone(),
+                        AttributeAction::Set(value.to_owned()),
+                    ))
+                    .with_whatever_context(|e| {
+                        format!("Could not set terminal tag attribute {}: {e}", t.selector)
+                    })?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn merge_tags(&mut self, extra_tags: Vec<TermQuery>) {
+        let extra_tags: Vec<Tag> = extra_tags
+            .iter()
+            .map(|t| t.selector.last_tag())
+            .filter(is_output_tag)
+            .collect();
+        match &mut self.tags {
+            TagScope::Shared(vec_of_tags) => push_unique_tags(vec_of_tags, &extra_tags),
+            TagScope::PerQuery(vec_vec_tags) => vec_vec_tags
+                .iter_mut()
+                .for_each(|vt| push_unique_tags(vt, &extra_tags)),
+        }
+    }
+
+    pub fn queries(&self) -> &[InMemDicomObject] {
+        &self.queries
+    }
+
+    pub fn len(&self) -> usize {
+        self.queries.len()
+    }
+    pub fn tags_for(&self, i: usize) -> &[Tag] {
+        tags_of(&self.tags, i)
+    }
+
+    pub fn all_tags(&self) -> Vec<Tag> {
+        let mut tags = match &self.tags {
+            TagScope::Shared(vt) => vt.clone(),
+            TagScope::PerQuery(vvt) => {
+                let mut seen = HashSet::new();
+                vvt.iter()
+                    .flatten()
+                    .copied()
+                    .filter(|t| seen.insert(*t))
+                    .collect()
+            }
+        };
+        tags.sort();
+        tags
+    }
+}
+
+fn tags_of(scope: &TagScope, i: usize) -> &[Tag] {
+    match scope {
+        TagScope::Shared(vt) => vt,         // &Vec<Tag>
+        TagScope::PerQuery(vvt) => &vvt[i], // &Vec<Vec<Tag>>
+    }
+}
 pub fn build_queries(
     file: Option<PathBuf>,
     term_tags: Vec<TermQuery>,
