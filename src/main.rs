@@ -124,9 +124,10 @@ enum Error {
         reason: String,
     },
 
-    #[snafu(display("Failed deserializing datasets from file"))]
+    #[snafu(display("Failed deserializing datasets from file `{}`", path.display()))]
     DeserDatasetsFromFile {
         source: error::DeserError,
+        path: PathBuf,
     },
 
     NoPresentationContext,

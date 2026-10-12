@@ -79,14 +79,14 @@ impl DicomQuerySet {
             .map_err(|reason| DatasetsFromFileSnafu { reason }.build())?;
 
         let file = File::open(&path)
-            .context(OpenFileSnafu { path })
-            .context(DeserDatasetsFromFileSnafu)?;
+            .context(OpenFileSnafu { path: path.clone() })
+            .context(DeserDatasetsFromFileSnafu { path: path.clone() })?;
 
         match file_ext {
             IOFileFormat::Csv => queries_from_csv(file),
             IOFileFormat::Json => queries_from_json(file), // datasets_from_json(file),
         }
-        .context(DeserDatasetsFromFileSnafu)
+        .context(DeserDatasetsFromFileSnafu { path: path.clone() })
     }
 
     pub fn add_terminal_tags(&mut self, term_tags: &[TermQuery]) -> Result<(), crate::Error> {
