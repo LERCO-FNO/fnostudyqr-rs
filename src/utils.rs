@@ -55,7 +55,7 @@ pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
         || path.ends_with(std::path::MAIN_SEPARATOR)
         || path_ref.file_name().is_none()
     {
-        whatever!("Not a valid file path: {}", path_ref.display());
+        whatever!("Directory path not allowed: `{}`", path_ref.display());
     }
 
     // - case 2: path is file -> check parent directory exists -> will write as path/to/parent/<filename>.<extension>
@@ -66,7 +66,7 @@ pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
     let parent = match path_ref.parent() {
         Some(p) if p.as_os_str().is_empty() => Path::new("."),
         Some(p) => p,
-        None => whatever!("Path {} has no parent", path_ref.display()),
+        None => whatever!("Path `{}` has no parent", path_ref.display()),
     };
     dbg!(path_ref);
     dbg!(parent);
@@ -74,7 +74,7 @@ pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
     if parent.is_dir() {
         std::path::absolute(path_ref).with_whatever_context(|e| format!("{e}"))
     } else {
-        whatever!("Parent directory not found for {}", path);
+        whatever!("Parent directory not found for `{}`", path);
     }
 
     // if !parent.is_dir() {
