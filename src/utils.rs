@@ -50,9 +50,9 @@ pub fn validate_response_filepath(path: &str) -> Result<PathBuf, Whatever> {
     // if path_ref.is_dir() {
     //     whatever!("Directory paths not allowed");
     // }
-
-    if path.ends_with('/')
-        || path.ends_with(std::path::MAIN_SEPARATOR)
+    if path_ref.is_dir()
+        || path.ends_with(['/', std::path::MAIN_SEPARATOR])
+        // || path.ends_with(std::path::MAIN_SEPARATOR)
         || path_ref.file_name().is_none()
     {
         whatever!("Directory path not allowed: `{}`", path_ref.display());
