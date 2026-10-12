@@ -52,7 +52,7 @@ PatientID;(0008,0020);StudyInstanceUID
 [
   {
     "QueryRetrieveLevel": "STUDY", // per object query level supported
-    "StudyInstanceUID": "1.2.3.4.5"
+    "StudyInstanceUID": "1.2.3.4.5",
     "Modality": "" // empty value
   },
   {
