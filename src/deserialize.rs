@@ -16,6 +16,47 @@ use crate::error::{CsvSnafu, DeserError, InvalidHeaderTagSnafu, JsonSnafu};
 use crate::query::DicomQuerySet;
 use crate::utils::{parse_date_range, parse_datetime, parse_time};
 
+#[derive(Debug, Eq, PartialEq, Hash)]
+pub struct HeaderTag {
+    pub tag: Tag,
+    pub vr: VR,
+}
+
+impl HeaderTag {
+    fn from_standard_dict(header: &str, dict: &StandardDataDictionary) -> Result<Self, DeserError> {
+        let entry = dict
+            .by_expr(header)
+            .context(InvalidHeaderTagSnafu { header })?;
+        let vr = entry
+            .vr()
+            .exact()
+            .whatever_context(format!("Unsupported VR for tag: {}", entry.tag()))?;
+
+        Ok(HeaderTag {
+            tag: entry.tag(),
+            vr,
+        })
+    }
+}
+
+// fn resolve_header_tag(
+//     dict: &StandardDataDictionary,
+//     header: &str,
+// ) -> Result<HeaderTag, DeserError> {
+//     let entry = dict
+//         .by_expr(header)
+//         .context(InvalidHeaderTagSnafu { header })?;
+//     let vr = entry
+//         .vr()
+//         .exact()
+//         .whatever_context(format!("Unsupported VR for tag: {}", entry.tag()))?;
+//
+//     Ok(HeaderTag {
+//         tag: entry.tag(),
+//         vr,
+//     })
+// }
+//
 struct SingleJsonStudy(InMemDicomObject, Vec<Tag>);
 struct StudyVisitor;
 
@@ -31,7 +72,7 @@ impl<'de> Deserialize<'de> for SingleJsonStudy {
 impl<'de> Visitor<'de> for StudyVisitor {
     type Value = SingleJsonStudy;
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("a map of DICOM keyword or \"gggg,eeee\" to value")
+        f.write_str("a map `{ ... }` of DICOM keyword or \"gggg,eeee\" to value")
     }
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<SingleJsonStudy, A::Error> {
@@ -41,19 +82,22 @@ impl<'de> Visitor<'de> for StudyVisitor {
         let mut seen: HashSet<Tag> = HashSet::new();
 
         while let Some((key, value)) = map.next_entry::<String, Value>()? {
-            let header_tag = resolve_header_tag(&dict, &key).map_err(de::Error::custom)?;
+            let header_tag =
+                HeaderTag::from_standard_dict(&key, &dict).map_err(de::Error::custom)?;
             if !seen.insert(header_tag.tag) {
                 warn!("Duplicate query tag: {key}-{value}");
             } else {
                 tags.push(header_tag.tag);
             }
-            // TODO: change to term_to_value
-            let element = build_element(header_tag.tag, header_tag.vr, &value).map_err(|e| {
+            let str_value = json_value_to_string(&value).map_err(|e| {
                 de::Error::custom(format!(
                     "Failed creating element for tag {key}-{value}: {e}"
                 ))
             })?;
-            elements.push(element);
+
+            let prim_value =
+                term_to_value(header_tag.tag, &str_value).map_err(de::Error::custom)?;
+            elements.push(DataElement::new(header_tag.tag, header_tag.vr, prim_value));
         }
 
         Ok(SingleJsonStudy(
@@ -78,7 +122,9 @@ impl<'de> Visitor<'de> for QueriesVisitor {
     type Value = JsonQueries;
 
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("a DICOM object map or an array of DICOM object maps")
+        f.write_str(
+            "a DICOM object map `{ ... }` or an array of DICOM object maps `[ { ... }, ... ]`",
+        )
     }
 
     // deserialize sequence of maps: [ { ... }, { ... }, ... ] or [ { ... } ]
@@ -110,58 +156,19 @@ pub fn queries_from_json<R: Read>(reader: R) -> Result<DicomQuerySet, DeserError
         .0)
 }
 
-fn build_element(tag: Tag, vr: VR, value: &Value) -> Result<InMemElement, Whatever> {
+fn json_value_to_string(value: &Value) -> Result<String, Whatever> {
     let text = match value {
-        Value::Null => return Ok(DataElement::empty(tag, vr)),
-        Value::String(s) if matches!(s.to_lowercase().as_str(), "nan" | "null") => {
-            return Ok(DataElement::empty(tag, vr));
-        }
+        Value::Null => String::new(),
+        Value::String(s) if matches!(s.to_lowercase().as_str(), "nan" | "null") => String::new(),
         Value::String(s) => s.clone(),
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         other => whatever!("unsupported JSON value {other}"),
     };
-    // TODO: try to replace with term_to_value()
-    Ok(DataElement::new(tag, vr, to_primitive(vr, &text)?))
+    Ok(text)
 }
 
-// TODO: replace this function with term_to_value() if possible
-fn to_primitive(vr: VR, s: &str) -> Result<PrimitiveValue, Whatever> {
-    match vr {
-        VR::US => parse_number::<u16>(s),
-        VR::UL => parse_number::<u32>(s),
-        VR::SS => parse_number::<i16>(s),
-        VR::SL => parse_number::<i32>(s),
-        VR::FL => parse_number::<f32>(s),
-        VR::FD => parse_number::<f64>(s),
-        VR::OB | VR::OW | VR::OF | VR::OD | VR::OL | VR::SQ | VR::UN => {
-            whatever!("VR {vr:?} is not supported from JSON text")
-        }
-        // All remaining VRs are text-based (DA, PN, UI, LO, IS, DS, ...)
-        VR::DA => {
-            let value = parse_date_range(s)?;
-            Ok(PrimitiveValue::from(value))
-        }
-        VR::TM => {
-            let value = parse_time(s)?;
-            Ok(PrimitiveValue::from(value))
-        }
-        VR::DT => {
-            let value = parse_datetime(s)?;
-            Ok(PrimitiveValue::from(value))
-        }
-        _ => {
-            let parts: Vec<String> = s.split('\\').map(str::to_owned).collect();
-            Ok(if parts.len() > 1 {
-                PrimitiveValue::Strs(parts.into())
-            } else {
-                PrimitiveValue::Str(s.to_owned())
-            })
-        }
-    }
-}
-
-pub fn term_to_value(tag: Tag, str_value: &str) -> Result<PrimitiveValue, DeserError> {
+pub fn term_to_value(tag: Tag, str_value: &str) -> Result<PrimitiveValue, Whatever> {
     // silent passthrough -> PACS will return value for this tag instead of matching
     if str_value.is_empty() {
         return Ok(PrimitiveValue::Empty);
@@ -259,18 +266,6 @@ pub fn term_to_value(tag: Tag, str_value: &str) -> Result<PrimitiveValue, DeserE
     Ok(value)
 }
 
-fn parse_number<T>(s: &str) -> Result<PrimitiveValue, Whatever>
-where
-    T: FromStr,
-    T::Err: std::error::Error + 'static + std::marker::Sync + std::marker::Send,
-    PrimitiveValue: From<T>,
-{
-    s.trim()
-        .parse::<T>()
-        .with_whatever_context(|e| format!("{s:?}: {e}"))
-        .map(PrimitiveValue::from)
-}
-
 pub fn queries_from_csv<R: Read>(reader: R) -> Result<DicomQuerySet, DeserError> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
@@ -282,7 +277,7 @@ pub fn queries_from_csv<R: Read>(reader: R) -> Result<DicomQuerySet, DeserError>
     let mut tags = Vec::new();
     let mut seen = HashSet::new();
     for key in reader.headers().context(CsvSnafu)?.iter() {
-        let ht = resolve_header_tag(&dict, key)?;
+        let ht = HeaderTag::from_standard_dict(key, &dict)?;
         if !seen.insert(ht.tag) {
             warn!("Duplicate query tag: {key}");
         } else {
@@ -298,7 +293,7 @@ pub fn queries_from_csv<R: Read>(reader: R) -> Result<DicomQuerySet, DeserError>
             let el = if cell.is_empty() | matches!(cell.to_lowercase().as_str(), "nan" | "null") {
                 DataElement::empty(tag, vr)
             } else {
-                let prim_value = term_to_value(tag, cell)?;
+                let prim_value = term_to_value(tag, cell).whatever_context("")?;
                 DataElement::new(tag, vr, prim_value)
             };
             elements.push(el);
@@ -312,30 +307,6 @@ pub fn queries_from_csv<R: Read>(reader: R) -> Result<DicomQuerySet, DeserError>
 
     let tags = tags.iter().map(|ht| ht.tag).collect::<Vec<Tag>>();
     Ok(DicomQuerySet::with_shared_tags(queries, tags))
-}
-
-#[derive(Debug, Eq, PartialEq, Hash)]
-pub struct HeaderTag {
-    pub tag: Tag,
-    pub vr: VR,
-}
-
-fn resolve_header_tag(
-    dict: &StandardDataDictionary,
-    header: &str,
-) -> Result<HeaderTag, DeserError> {
-    let entry = dict
-        .by_expr(header)
-        .context(InvalidHeaderTagSnafu { header })?;
-    let vr = entry
-        .vr()
-        .exact()
-        .whatever_context(format!("Unsupported VR for tag: {}", entry.tag()))?;
-
-    Ok(HeaderTag {
-        tag: entry.tag(),
-        vr,
-    })
 }
 
 #[cfg(test)]
