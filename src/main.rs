@@ -292,7 +292,8 @@ fn parse_query_tags(
     let study_tag: TermQuery = "StudyInstanceUID".parse()?;
     let query_retrieve_level: TermQuery = match level {
         InformationLevel::Patient => "0008,0052=PATIENT",
-        InformationLevel::Study | InformationLevel::Series => "0008,0052=STUDY",
+        InformationLevel::Study => "0008,0052=STUDY",
+        InformationLevel::Series => "0008,0052=SERIES",
     }
     .parse()?;
 
