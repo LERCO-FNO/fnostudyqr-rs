@@ -12,6 +12,15 @@ A CLI query/retrieve tool for a bulk of DICOM studies.
 * `-t, --calling-ae-title <AE>`: Caller application entity title.
 * `-c, --called-ae-title <AE>`: Called application entity title.
 
+**IMPORTANT!!** Query objects require at least one non-empty matching identifier: `PatientID` or `StudyInstanceUID`, see table below:
+| PatientID | StudyInstanceUID | Result |
+| --------------- | --------------- | --------------- |
+| non-empty | absent/empty/non-empty | pass |
+| absent/empty | non-empty | pass |
+| absent/empty | absent/empty | **fail** |
+
+
+
 ##### `find`-only options
 
 * `-f, --out-response-path <PATH>`: File path to write response tags. If not given no responses are written.

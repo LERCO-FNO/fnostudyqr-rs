@@ -1,5 +1,7 @@
+use dicom_core::header::HasLength;
 use dicom_core::ops::{ApplyOp, AttributeAction, AttributeOp, AttributeSelector};
 use dicom_core::{DataDictionary, DataElement, PrimitiveValue, Tag, VR};
+use dicom_dictionary_std::tags::PATIENT_ID;
 use dicom_dictionary_std::{StandardDataDictionary, tags::STUDY_INSTANCE_UID};
 use dicom_object::InMemDicomObject;
 use std::collections::HashSet;
@@ -7,13 +9,16 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::path::PathBuf;
 
-use snafu::{OptionExt, ResultExt, Whatever};
+use snafu::{OptionExt, ResultExt, Whatever, ensure};
 use std::str::FromStr;
 
 use crate::deserialize::{queries_from_csv, queries_from_json, term_to_value};
 use crate::error::OpenFileSnafu;
 use crate::utils::{is_output_tag, push_unique_tags};
-use crate::{DatasetsFromFileSnafu, DeserDatasetsFromFileSnafu, Error, IOFileFormat};
+use crate::{
+    DatasetsFromFileSnafu, DeserDatasetsFromFileSnafu, Error, IOFileFormat,
+    NoRequiredIdentifierSnafu,
+};
 
 #[derive(Debug)]
 pub enum TagScope {
@@ -124,6 +129,19 @@ impl DicomQuerySet {
         }
     }
 
+    pub fn validate_required_tags(&self) -> Result<(), Error> {
+        let has_value =
+            |ds: &InMemDicomObject, tag: Tag| ds.get(tag).is_some_and(|e| !e.is_empty());
+
+        for (index, ds) in self.queries.iter().enumerate() {
+            ensure!(
+                has_value(ds, PATIENT_ID) || has_value(ds, STUDY_INSTANCE_UID),
+                NoRequiredIdentifierSnafu { index }
+            );
+        }
+        Ok(())
+    }
+
     pub fn queries(&self) -> &[InMemDicomObject] {
         &self.queries
     }
@@ -170,6 +188,8 @@ pub fn build_queries(
     };
 
     query_datasets.add_terminal_tags(&term_tags)?;
+
+    query_datasets.validate_required_tags()?;
 
     query_datasets.merge_tags(term_tags);
     Ok(query_datasets)
