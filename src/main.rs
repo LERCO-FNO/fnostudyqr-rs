@@ -5,6 +5,7 @@ use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
 use std::str::FromStr;
 use tracing::{error, info, warn};
+use tracing_subscriber::fmt::time::ChronoLocal;
 
 mod client;
 mod deserialize;
@@ -190,6 +191,7 @@ fn run() -> Result<(), Error> {
 
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
+            .with_timer(ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_string()))
             .with_max_level(if verbose {
                 tracing::Level::DEBUG
             } else {
