@@ -136,7 +136,7 @@ fn write_to_csv<W: std::io::Write>(
         .from_writer(writer);
     writer.write_record(header).context(SerializeCsvSnafu)?;
     for obj in responses.iter().flat_map(|r| &r.matches) {
-        let values = extract_row(&tags, obj)
+        let values = serialize_dataset(&tags, obj)
             .iter()
             .map(|v| v.to_string())
             .collect::<Vec<String>>();
@@ -160,7 +160,7 @@ fn write_to_json<W: std::io::Write>(
         let tags = query_set.tags_for(resp.query_index);
         let keys: Vec<String> = tags.iter().map(|&t| tag_label(t, &dict)).collect();
         for obj in &resp.matches {
-            let values = extract_row(tags, obj);
+            let values = serialize_dataset(tags, obj);
             seq.serialize_element(&Row {
                 keys: &keys,
                 values: &values,
@@ -172,7 +172,7 @@ fn write_to_json<W: std::io::Write>(
     Ok(())
 }
 
-fn extract_row(tags: &[Tag], obj: &InMemDicomObject) -> Vec<FieldValue> {
+fn serialize_dataset(tags: &[Tag], obj: &InMemDicomObject) -> Vec<FieldValue> {
     tags.iter()
         .map(|t| match obj.element(*t) {
             Ok(el) => parse_element(el).unwrap_or_else(|e| {
@@ -193,12 +193,33 @@ fn parse_element(el: &DataElement<InMemDicomObject>) -> Result<FieldValue, SerEr
 
     let vr = el.vr();
     let values: Vec<SingleValue> = match vr {
-        AE | AS | CS | LO | LT | PN | SH | ST | UI | UR | UT | UC | DA | TM | DT => el
+        AE | AS | CS | LO | LT | PN | SH | ST | UI | UR | UT | UC => el
             .value()
             .to_multi_str()
             .context(CastSnafu { vr })?
             .iter()
             .map(|s| SingleValue::Text(s.clone()))
+            .collect(),
+        DA => el
+            .value()
+            .to_multi_date()
+            .context(ConvertSnafu { vr })?
+            .iter()
+            .map(|s| SingleValue::Text(s.to_string()))
+            .collect(),
+        TM => el
+            .value()
+            .to_multi_time()
+            .context(ConvertSnafu { vr })?
+            .iter()
+            .map(|s| SingleValue::Text(s.to_string()))
+            .collect(),
+        DT => el
+            .value()
+            .to_multi_datetime()
+            .context(ConvertSnafu { vr })?
+            .iter()
+            .map(|s| SingleValue::Text(s.to_string()))
             .collect(),
         IS | SS | SL | US | UL => el
             .value()
