@@ -193,12 +193,33 @@ fn parse_element(el: &DataElement<InMemDicomObject>) -> Result<FieldValue, SerEr
 
     let vr = el.vr();
     let values: Vec<SingleValue> = match vr {
-        AE | AS | CS | LO | LT | PN | SH | ST | UI | UR | UT | UC | DA | TM | DT => el
+        AE | AS | CS | LO | LT | PN | SH | ST | UI | UR | UT | UC => el
             .value()
             .to_multi_str()
             .context(CastSnafu { vr })?
             .iter()
             .map(|s| SingleValue::Text(s.clone()))
+            .collect(),
+        DA => el
+            .value()
+            .to_multi_date()
+            .context(ConvertSnafu { vr })?
+            .iter()
+            .map(|s| SingleValue::Text(s.to_string()))
+            .collect(),
+        TM => el
+            .value()
+            .to_multi_time()
+            .context(ConvertSnafu { vr })?
+            .iter()
+            .map(|s| SingleValue::Text(s.to_string()))
+            .collect(),
+        DT => el
+            .value()
+            .to_multi_datetime()
+            .context(ConvertSnafu { vr })?
+            .iter()
+            .map(|s| SingleValue::Text(s.to_string()))
             .collect(),
         IS | SS | SL | US | UL => el
             .value()
