@@ -25,11 +25,10 @@ use crate::utils::validate_response_filepath;
 #[derive(Debug, Parser)]
 #[command(version)]
 struct Args {
-    /// Socket address to SCP, ex: "<AET>@127.0.0.1:1045".
-    /// Called AET prefix is optional, otherwise used with --called_ae_title=<AET>
+    /// Socket address to SCP, ex: "<AET>@127.0.0.1:1045". Called <AET> prefix is optional,
+    /// otherwise set with --called-ae-title.
     addr: String,
-    /// Input file containing list of study tags.
-    /// Minimum of PatientID and StudyDate are required
+    /// Input file with study identifiers. Requires non-empty StudyInstanceUID or PatientID with StudyDate.
     #[arg(short = 'i', long, value_name = "PATH", global = true)]
     in_study_file: Option<PathBuf>,
     /// Additional sequence of tags
