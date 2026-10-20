@@ -293,63 +293,93 @@ pub fn queries_from_csv<R: Read>(reader: R) -> Result<DicomQuerySet, DeserError>
 
 #[cfg(test)]
 mod tests {
+    use dicom_core::header::HasLength;
+    use dicom_dictionary_std::tags;
+
     use super::*;
 
     #[test]
-    fn deser_single_object() {
+    fn test_json_deser_one() {
         let json_object = r#"
         {
             "StudyDate": "2000-01-01",
-            "PatientID": "LIDC-IDRI-0580",
-            "StudyInstanceUID": "1.3.6.1.4.1.14519.5.2.1.6279.6001.173480979711457247360986415860",
+            "PatientID": "ID01",
+            "StudyInstanceUID": "1.2.3",
             "StudyDescription": "",
             "ModalitiesInStudy": "nAn"
         }"#;
 
-        let JsonQueries(DicomQuerySet { queries, tags }) =
-            serde_json::from_str(json_object).expect("Failed deserializing JSON");
+        let queries = queries_from_json(json_object.as_bytes()).expect("Failed deserializing JSON");
         assert_eq!(queries.len(), 1);
-        println!("{tags:?}");
+
+        let dcm_object = queries.queries.first().unwrap();
+        let expected_vals = &[
+            (tags::PATIENT_ID, Some("ID01")),
+            (tags::STUDY_DESCRIPTION, None),
+            (tags::MODALITIES_IN_STUDY, None),
+        ];
+
+        for (tag, expected) in expected_vals {
+            let value = dcm_object
+                .value_at(*tag)
+                .unwrap_or_else(|e| panic!("Expected a DataElement for {tag}: {e}"));
+            match expected {
+                Some(s) => assert_eq!(value.to_str().unwrap(), *s, "{tag}"),
+                None => assert!(value.is_empty(), "{tag} should be empty, got {value:?}"),
+            }
+        }
     }
 
     #[test]
-    fn deser_multiple_object() {
+    fn test_json_deser_many() {
+        // JSON parsed DICOM objects allows variable number of tags
         let json_object = r#"
         [
             {
                 "StudyDate": "1999-01-02",
-                "PatientID": "112516",
-                "StudyInstanceUID": "1.2.840.113654.2.55.33575893932308185246496913106863435791"
+                "PatientID": "ID01",
+                "StudyInstanceUID": "1.2.3"
             },
             {
                 "StudyDate": "2000-01-01",
-                "PatientID": "LIDC-IDRI-0580",
-                "StudyInstanceUID": "1.3.6.1.4.1.14519.5.2.1.6279.6001.173480979711457247360986415860",
+                "PatientID": "ID02",
+                "StudyInstanceUID": "2.5.6",
                 "StudyDescription": "",
                 "ModalitiesInStudy": "nAn"
             }
         ]"#;
 
-        let JsonQueries(DicomQuerySet { queries, tags }) =
-            serde_json::from_str(json_object).expect("Failed deserializing JSON");
-        assert_eq!(queries.len(), 2);
+        let queries = queries_from_json(json_object.as_bytes()).expect("Failed deserializing JSON");
+        assert_eq!(
+            queries.len(),
+            2,
+            "Expected 2 objects, got {}",
+            queries.len()
+        );
+
+        for (obj, expected_count) in queries.queries.iter().zip([3, 5]) {
+            let num_of_tags = obj.tags().count();
+            assert_eq!(
+                num_of_tags, expected_count,
+                "Expected {expected_count} tags, got {num_of_tags}"
+            );
+        }
     }
 
-    // #[test]
-    // fn deser_json_file() {
-    //     let path = "./output/res.json";
-    //     let file = std::fs::File::open(path)
-    //         .context(OpenFileSnafu { path })
-    //         .expect("Failed opening file");
-    //     let datasets: Result<JsonStudyQueries, DeserError> =
-    //         serde_json::from_reader(std::io::BufReader::new(file)).context(JsonSnafu);
-    //     assert!(datasets.is_ok());
-    // }
+    #[test]
+    fn test_csv_deser_many() {
+        // All DICOM objects always share the same header tags
+        let csv_object = r"
+        PatientID;StudyInstanceUID;StudyDescription;ModalitiesInStudy
+        ID01;1.2.3;;
+        ID02;2.5.6;nAn;
+        ";
+        let queries =
+            queries_from_csv(csv_object.trim().as_bytes()).expect("Failed deserializing CSV");
 
-    // #[test]
-    // fn deser_json_file_fail() {
-    //     let path = "./output/nofile.json";
-    //     let err = datasets_from_json(path.into());
-    //     assert!(err.is_err());
-    // }
+        for obj in queries.queries {
+            let num_of_tags = obj.tags().count();
+            assert_eq!(num_of_tags, 4, "Expected 4 tags, got {num_of_tags}");
+        }
+    }
 }
