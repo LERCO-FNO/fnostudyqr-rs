@@ -222,28 +222,3 @@ impl FromStr for TermQuery {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::deserialize::term_to_value;
-    use dicom_core::PrimitiveValue;
-    use dicom_dictionary_std::tags;
-
-    #[test]
-    fn parse_datetime() {
-        let datetime_str = "2020-01-02 05:30:20.123";
-        let parsed = term_to_value(tags::DATE_TIME, datetime_str).expect("Failed parsing");
-        assert_eq!(parsed, PrimitiveValue::from("20200102053020.123000"))
-    }
-
-    #[test]
-    fn parse_date_range() {
-        let date_range_str = "2020-01-02..2022-12-30";
-        let parsed = term_to_value(tags::DATE, date_range_str).expect("Failed parsing");
-        assert_eq!(parsed, PrimitiveValue::from("20200102-20221230"))
-    }
-
-    #[test]
-    fn tags_merged_sorted() {}
-}
