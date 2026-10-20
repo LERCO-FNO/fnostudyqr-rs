@@ -204,11 +204,7 @@ fn run() -> Result<(), Error> {
 
     let query_tags = parse_query_tags(query_tag, &information_level)
         .whatever_context("Failed to parse query tags from command line")?;
-    let ds_queries = build_queries(
-        in_study_file,
-        query_tags,
-        /*&information_level,*/ verbose,
-    )?;
+    let ds_queries = build_queries(in_study_file, query_tags, verbose)?;
 
     let mut client = ScuClient::new(
         (&request_mode).into(),
