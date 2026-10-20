@@ -220,7 +220,7 @@ fn run() -> Result<(), Error> {
         verbose,
     )?;
 
-    info!("Requesting {} query/ies", ds_queries.len());
+    info!("Requesting {} query(ies)", ds_queries.len());
     let _query_result = match request_mode {
         RequestMode::Find {
             out_response_path: out_response_filepath,
