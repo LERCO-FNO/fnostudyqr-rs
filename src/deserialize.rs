@@ -9,10 +9,9 @@ use dicom_object::InMemDicomObject;
 use serde::Deserialize;
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::Value;
-use snafu::{OptionExt, ResultExt, Whatever, whatever};
+use snafu::{OptionExt, ResultExt, Snafu, Whatever, whatever};
 use tracing::warn;
 
-use crate::error::{CsvSnafu, DeserError, InvalidHeaderTagSnafu, JsonSnafu};
 use crate::query::DicomQuerySet;
 use crate::utils::{parse_date_range, parse_datetime, parse_time};
 
@@ -289,6 +288,31 @@ pub fn queries_from_csv<R: Read>(reader: R) -> Result<DicomQuerySet, DeserError>
 
     let tags = tags.iter().map(|ht| ht.tag).collect::<Vec<Tag>>();
     Ok(DicomQuerySet::with_shared_tags(queries, tags))
+}
+
+#[derive(Debug, Snafu)]
+pub enum DeserError {
+    #[snafu(display("Invalid JSON: {}", source))]
+    Json { source: serde_json::Error },
+
+    #[snafu(display("Invalid CSV: {}", source))]
+    Csv { source: csv::Error },
+
+    #[snafu(display("Invalid DICOM tag header: {}", header))]
+    InvalidHeaderTag { header: String },
+
+    #[snafu(display("Invalid VR {} for DICOM tag {}", vr, tag))]
+    InvalidVR { tag: Tag, vr: VR },
+
+    #[snafu(display("Bad value {:?} for tag {}", value, tag))]
+    BadValue { value: String, tag: Tag },
+
+    #[snafu(whatever, display("{}", message))]
+    Other {
+        message: String,
+        #[snafu(source(from(Box<dyn std::error::Error + 'static>, Some)))]
+        source: Option<Box<dyn std::error::Error + 'static>>,
+    },
 }
 
 #[cfg(test)]
