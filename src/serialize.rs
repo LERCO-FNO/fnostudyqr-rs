@@ -159,7 +159,7 @@ fn write_to_json<W: std::io::Write>(
         let tags = query_set.tags_for(resp.query_index);
         let keys: Vec<String> = tags.iter().map(|&t| tag_label(t, &dict)).collect();
         for obj in &resp.matches {
-            let values = serialize_dataset(tags, obj);
+            let values = serialize_dataset(&tags, obj);
             seq.serialize_element(&Row {
                 keys: &keys,
                 values: &values,

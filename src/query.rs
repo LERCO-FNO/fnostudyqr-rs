@@ -148,8 +148,10 @@ impl DicomQuerySet {
     pub fn len(&self) -> usize {
         self.queries.len()
     }
-    pub fn tags_for(&self, i: usize) -> &[Tag] {
-        tags_of(&self.tags, i)
+    pub fn tags_for(&self, i: usize) -> Vec<Tag> {
+        let mut tags = tags_of(&self.tags, i).to_owned();
+        tags.sort();
+        tags
     }
 
     pub fn all_tags(&self) -> Vec<Tag> {
