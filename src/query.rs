@@ -24,7 +24,7 @@ use crate::{
 pub enum TagScope {
     /// CSV: single tags header shared across all studies
     Shared(Vec<Tag>),
-    /// JSON: independent tags per study - tags[i] -> query[i]
+    /// JSON: independent tags per study - tags[i] -> queries[i]
     PerQuery(Vec<Vec<Tag>>),
 }
 
@@ -44,7 +44,6 @@ impl Default for DicomQuerySet {
 
         let tags = TagScope::PerQuery(vec![vec![STUDY_INSTANCE_UID]]);
 
-        // JsonStudyQueries(vec![(ds, HashSet::from([tags::STUDY_INSTANCE_UID]))])
         DicomQuerySet {
             queries: vec![ds],
             tags,
@@ -89,7 +88,7 @@ impl DicomQuerySet {
 
         match file_ext {
             IOFileFormat::Csv => queries_from_csv(file),
-            IOFileFormat::Json => queries_from_json(file), // datasets_from_json(file),
+            IOFileFormat::Json => queries_from_json(file),
         }
         .context(DeserDatasetsFromFileSnafu { path: path.clone() })
     }
@@ -123,7 +122,7 @@ impl DicomQuerySet {
             .collect();
         match &mut self.tags {
             TagScope::Shared(vec_of_tags) => push_unique_tags(vec_of_tags, &extra_tags),
-            TagScope::PerQuery(vec_vec_tags) => vec_vec_tags
+            TagScope::PerQuery(vec_vec_of_tags) => vec_vec_of_tags
                 .iter_mut()
                 .for_each(|vt| push_unique_tags(vt, &extra_tags)),
         }
@@ -155,10 +154,11 @@ impl DicomQuerySet {
 
     pub fn all_tags(&self) -> Vec<Tag> {
         let mut tags = match &self.tags {
-            TagScope::Shared(vt) => vt.clone(),
-            TagScope::PerQuery(vvt) => {
+            TagScope::Shared(vec_of_tags) => vec_of_tags.clone(),
+            TagScope::PerQuery(vec_vec_of_tags) => {
                 let mut seen = HashSet::new();
-                vvt.iter()
+                vec_vec_of_tags
+                    .iter()
                     .flatten()
                     .copied()
                     .filter(|t| seen.insert(*t))
@@ -172,18 +172,17 @@ impl DicomQuerySet {
 
 fn tags_of(scope: &TagScope, i: usize) -> &[Tag] {
     match scope {
-        TagScope::Shared(vt) => vt,         // &Vec<Tag>
-        TagScope::PerQuery(vvt) => &vvt[i], // &Vec<Vec<Tag>>
+        TagScope::Shared(vec_of_tags) => vec_of_tags,
+        TagScope::PerQuery(vec_vec_of_tags) => &vec_vec_of_tags[i],
     }
 }
 pub fn build_queries(
     file: Option<PathBuf>,
     term_tags: Vec<TermQuery>,
-    // information_model: &InformationLevel,
     _verbose: bool,
 ) -> Result<DicomQuerySet, Error> {
     let mut query_datasets = match file {
-        Some(file) => DicomQuerySet::queries_from_file(file)?, //datasets_from_file(file)?,
+        Some(file) => DicomQuerySet::queries_from_file(file)?,
         None => DicomQuerySet::default(),
     };
 
