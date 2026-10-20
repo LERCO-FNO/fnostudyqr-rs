@@ -95,7 +95,6 @@ enum SerError {
 
 pub fn write_responses(
     path: PathBuf,
-    // output_format: QRFileFormat,
     query_set: &DicomQuerySet,
     responses: &[FindResult],
 ) -> Result<(), Error> {

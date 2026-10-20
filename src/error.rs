@@ -11,11 +11,8 @@ pub enum DeserError {
         path: PathBuf,
     },
 
-    #[snafu(display("Invalid JSON: {}", source /*path.display()*/))]
-    Json {
-        source: serde_json::Error,
-        // path: PathBuf,
-    },
+    #[snafu(display("Invalid JSON: {}", source))]
+    Json { source: serde_json::Error },
 
     #[snafu(display("Invalid CSV: {}", source))]
     Csv { source: csv::Error },

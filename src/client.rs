@@ -122,15 +122,10 @@ impl ScuClient {
         })
     }
 
-    pub fn find_study(
-        &mut self,
-        query_set: &DicomQuerySet,
-        // out_response_file: PathBuf,
-    ) -> Result<Vec<FindResult>, Error> {
+    pub fn find_study(&mut self, query_set: &DicomQuerySet) -> Result<Vec<FindResult>, Error> {
         // capacity is just a hint, expected to be greater
         let mut responses = Vec::with_capacity(query_set.len());
 
-        // let ds_len = ds_queries.len() as u16;
         for (index, ds_object) in query_set.queries().iter().enumerate() {
             let msg_id = ((index % u16::MAX as usize) + 1) as u16;
             let cmd = find_req_command(&self.abstract_syntax, msg_id);
@@ -297,8 +292,6 @@ impl ScuClient {
         ds_queries: &[InMemDicomObject],
         move_destination: &str,
     ) -> Result<(), Error> {
-        // let mut responses: Vec<InMemDicomObject> = Vec::new();
-
         let ds_len = ds_queries.len() as u16;
         for (ds, index) in ds_queries.iter().zip(1..=ds_len) {
             let cmd = move_req_command(&self.abstract_syntax, move_destination, index);

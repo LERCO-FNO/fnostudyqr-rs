@@ -258,8 +258,8 @@ fn run() -> Result<(), Error> {
                 .build()
                 .unwrap();
             let store_args = StoreScpArgs {
-                calling_ae_title: calling_ae_title.clone(), // was calling_ae_title.clone()
-                output_dir,                                 // was output_dir.clone()
+                calling_ae_title: calling_ae_title.clone(),
+                output_dir,
                 store_port,
                 verbose,
             };
