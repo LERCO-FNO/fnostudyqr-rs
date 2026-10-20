@@ -1,8 +1,8 @@
 use dicom_core::header::HasLength;
 use dicom_core::ops::{ApplyOp, AttributeAction, AttributeOp, AttributeSelector};
 use dicom_core::{DataDictionary, DataElement, PrimitiveValue, Tag, VR};
-use dicom_dictionary_std::tags::PATIENT_ID;
-use dicom_dictionary_std::{StandardDataDictionary, tags::STUDY_INSTANCE_UID};
+use dicom_dictionary_std::StandardDataDictionary;
+use dicom_dictionary_std::tags::{PATIENT_ID, STUDY_DATE, STUDY_INSTANCE_UID};
 use dicom_object::InMemDicomObject;
 use std::collections::HashSet;
 use std::ffi::OsStr;
@@ -36,13 +36,15 @@ pub struct DicomQuerySet {
 
 impl Default for DicomQuerySet {
     fn default() -> Self {
-        let ds = InMemDicomObject::from_element_iter([DataElement::new(
-            STUDY_INSTANCE_UID,
-            VR::UI,
-            PrimitiveValue::Empty,
-        )]);
+        // let ds = InMemDicomObject::from_element_iter([DataElement::new(
+        //     STUDY_INSTANCE_UID,
+        //     VR::UI,
+        //     PrimitiveValue::Empty,
+        // )]);
+        let ds = InMemDicomObject::new_empty();
 
-        let tags = TagScope::PerQuery(vec![vec![STUDY_INSTANCE_UID]]);
+        // let tags = TagScope::PerQuery(vec![vec![STUDY_INSTANCE_UID]]);
+        let tags = TagScope::PerQuery(vec![vec![]]);
 
         DicomQuerySet {
             queries: vec![ds],
@@ -134,7 +136,8 @@ impl DicomQuerySet {
 
         for (index, ds) in self.queries.iter().enumerate() {
             ensure!(
-                has_value(ds, PATIENT_ID) || has_value(ds, STUDY_INSTANCE_UID),
+                has_value(ds, STUDY_INSTANCE_UID)
+                    | (has_value(ds, PATIENT_ID) & has_value(ds, STUDY_DATE)),
                 NoRequiredIdentifierSnafu { index }
             );
         }

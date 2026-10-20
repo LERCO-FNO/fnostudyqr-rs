@@ -294,18 +294,12 @@ fn parse_query_tags(
         .collect::<Result<HashSet<TermQuery>, _>>()
         .whatever_context("Could not parse query tags")?;
 
-    let study_tag: TermQuery = "StudyInstanceUID".parse()?;
     let query_retrieve_level: TermQuery = match level {
         InformationLevel::Patient => "0008,0052=PATIENT",
         InformationLevel::Study => "0008,0052=STUDY",
         InformationLevel::Series => "0008,0052=SERIES",
     }
     .parse()?;
-
-    // implicitly add these two required tags
-    if let Some(old) = tags.replace(study_tag) {
-        warn!("Do not add DICOM tag {old:?} in terminal, it is added automatically");
-    }
 
     if let Some(old) = tags.replace(query_retrieve_level) {
         warn!("Do not add DICOM tag {old:?} in terminal, it is added automatically");
