@@ -86,7 +86,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn is_valid_response_path() {
+    fn test_is_valid_response_path() {
         let path = "./response.json";
         let res = validate_response_filepath(path);
         assert!(res.is_ok());
@@ -97,7 +97,7 @@ mod tests {
     }
 
     #[test]
-    fn is_invalid_response_path() {
+    fn test_is_invalid_response_path() {
         let path = ".";
         let res = validate_response_filepath(path);
         assert!(res.is_err());
@@ -109,5 +109,26 @@ mod tests {
             .to_owned();
         let res = validate_response_filepath(&path);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_is_valid_date_range() {
+        let parsed = parse_date_range("2020-01-01..2020-05-05");
+        assert!(parsed.is_ok());
+        assert_eq!(parsed.unwrap(), "20200101-20200505");
+    }
+
+    #[test]
+    fn test_is_valid_time() {
+        let parsed = parse_time("07:30:20.050");
+        assert!(parsed.is_ok());
+        assert_eq!(parsed.unwrap(), "073020.050000")
+    }
+
+    #[test]
+    fn test_is_valid_datetime() {
+        let parsed = parse_datetime("2020-01-01 07:30:20");
+        assert!(parsed.is_ok());
+        assert_eq!(parsed.unwrap(), "20200101073020.000000")
     }
 }
