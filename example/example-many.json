@@ -1,0 +1,14 @@
+[
+  {
+    "PatientID": "ID01",
+    "StudyInstanceUID": "1.2.3",
+    "AccessionNumber": ""
+  },
+  {
+    "PatientID": "ID02",
+    "StudyInstanceUID": "4.5.6",
+    "QueryRetrieveLevel": "SERIES",
+    "SeriesNumber": "1\\2\\3",
+    "SeriesDescription": ""
+  }
+]

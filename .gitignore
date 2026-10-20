@@ -5,5 +5,10 @@
 /target
 /output
 
-*.csv
 *.json
+*.csv
+
+# explicitly exclude examples/ from ignoring
+!example/
+!example/*.json
+!example/*.csv

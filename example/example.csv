@@ -1,0 +1,3 @@
+PatientID;StudyDate;AccessionNumber;ModalitiesInStudy;StudyInstanceUID
+ID01;2000-01-01;nan;;
+ID02;1999-01-02;NUM0123;CT;
