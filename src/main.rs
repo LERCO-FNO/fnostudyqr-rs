@@ -155,7 +155,7 @@ enum Error {
         source: csv::Error,
     },
     #[snafu(display(
-        "Query #{}: absent/empty required identifier, set non-empty PatientID (0010,0020) or StudyInstanceUID (0008,000D)",
+        "Query #{}: absent/empty required identifier(s), set non-empty either PatientID (0010,0020) with StudyDate (0008,0020) or StudyInstanceUID (0008,000D)",
         index + 1
     ))]
     NoRequiredIdentifier {
