@@ -16,7 +16,7 @@ use crate::deserialize::{queries_from_csv, queries_from_json, term_to_value};
 use crate::error::OpenFileSnafu;
 use crate::utils::{is_output_tag, push_unique_tags};
 use crate::{
-    DatasetsFromFileSnafu, DeserDatasetsFromFileSnafu, Error, IOFileFormat,
+    DeserDatasetsFromFileSnafu, Error, IOFileFormat, IOFileFormatExtensionSnafu,
     NoRequiredIdentifierSnafu,
 };
 
@@ -80,7 +80,7 @@ impl DicomQuerySet {
             .and_then(OsStr::to_str)
             .unwrap_or_default()
             .parse::<IOFileFormat>()
-            .map_err(|reason| DatasetsFromFileSnafu { reason }.build())?;
+            .map_err(|reason| IOFileFormatExtensionSnafu { reason }.build())?;
 
         let file = File::open(&path)
             .context(OpenFileSnafu { path: path.clone() })

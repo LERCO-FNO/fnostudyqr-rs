@@ -120,10 +120,10 @@ enum Error {
         source: std::io::Error,
     },
     #[snafu(display("Could not create datasets from file: {reason}"))]
-    DatasetsFromFile {
+    IOFileFormatExtension {
         reason: String,
     },
-
+    /// Could not desrialize DICOM objects from input file
     #[snafu(display("Failed deserializing datasets from file `{}`", path.display()))]
     DeserDatasetsFromFile {
         source: error::DeserError,
