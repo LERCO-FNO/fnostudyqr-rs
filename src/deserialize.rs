@@ -382,4 +382,25 @@ mod tests {
             assert_eq!(num_of_tags, 4, "Expected 4 tags, got {num_of_tags}");
         }
     }
+
+    #[test]
+    fn test_queries_from_json() {
+        let reader =
+            std::fs::File::open("example/example-many.json").expect("Expected a valid JSON file");
+        let queries = queries_from_json(reader).expect("Failed deserializing JSON file");
+        assert!(
+            queries.len() >= 1,
+            "Expected at least 1 query object, got none"
+        );
+    }
+
+    #[test]
+    fn test_queries_from_csv() {
+        let reader = std::fs::File::open("example/example.csv").expect("Expected a valid CSV file");
+        let queries = queries_from_csv(reader).expect("Failed deserializing CSV file");
+        assert!(
+            queries.len() >= 1,
+            "Expected at least 1 query object, got none"
+        );
+    }
 }
