@@ -9,7 +9,6 @@ use tracing_subscriber::fmt::time::ChronoLocal;
 
 mod client;
 mod deserialize;
-mod error;
 mod query;
 mod serialize;
 mod store_async;
@@ -126,7 +125,13 @@ enum Error {
     /// Could not desrialize DICOM objects from input file
     #[snafu(display("Failed deserializing datasets from file `{}`", path.display()))]
     DeserDatasetsFromFile {
-        source: error::DeserError,
+        source: deserialize::DeserError,
+        path: PathBuf,
+    },
+
+    #[snafu(display("Failed opening file at `{}`", path.display()))]
+    OpenFile {
+        source: std::io::Error,
         path: PathBuf,
     },
 
@@ -215,7 +220,7 @@ fn run() -> Result<(), Error> {
         verbose,
     )?;
 
-    info!("Requesting {} query/ies", ds_queries.len());
+    info!("Requesting {} query(ies)", ds_queries.len());
     let _query_result = match request_mode {
         RequestMode::Find {
             out_response_path: out_response_filepath,

@@ -13,11 +13,10 @@ use snafu::{OptionExt, ResultExt, Whatever, ensure};
 use std::str::FromStr;
 
 use crate::deserialize::{queries_from_csv, queries_from_json, term_to_value};
-use crate::error::OpenFileSnafu;
 use crate::utils::{is_output_tag, push_unique_tags};
 use crate::{
     DeserDatasetsFromFileSnafu, Error, IOFileFormat, IOFileFormatExtensionSnafu,
-    NoRequiredIdentifierSnafu,
+    NoRequiredIdentifierSnafu, OpenFileSnafu,
 };
 
 #[derive(Debug)]
@@ -84,9 +83,7 @@ impl DicomQuerySet {
             .parse::<IOFileFormat>()
             .map_err(|reason| IOFileFormatExtensionSnafu { reason }.build())?;
 
-        let file = File::open(&path)
-            .context(OpenFileSnafu { path: path.clone() })
-            .context(DeserDatasetsFromFileSnafu { path: path.clone() })?;
+        let file = File::open(&path).context(OpenFileSnafu { path: path.clone() })?;
 
         match file_ext {
             IOFileFormat::Csv => queries_from_csv(file),
