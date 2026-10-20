@@ -12,12 +12,14 @@ A CLI query/retrieve tool for a bulk of DICOM studies.
 * `-t, --calling-ae-title <AE>`: Caller application entity title.
 * `-c, --called-ae-title <AE>`: Called application entity title.
 
-**IMPORTANT!!** Query objects require at least one non-empty matching identifier: `PatientID` or `StudyInstanceUID`, see table below:
-| PatientID | StudyInstanceUID | Result |
-| --------------- | --------------- | --------------- |
-| non-empty | absent/empty/non-empty | pass |
-| absent/empty | non-empty | pass |
-| absent/empty | absent/empty | **fail** |
+**IMPORTANT!!** Query objects require non-empty matching identifier(s): Either `PatientID` with `StudyDate` or `StudyInstanceUID`, see table below:
+| PatientID | StudyDate | StudyInstanceUID | Result |
+| --------------- | --------------- | --------------- | --------------- |
+| non-empty | non-empty | absent/empty/value | pass |
+| absent/empty | absent/empty | value | pass |
+| value | absent/empty | absent/empty | **fail** |
+| absent/empty | value | absent/empty | **fail** |
+| absent/empty | absent/empty | absent/empty | **fail** |
 
 
 
