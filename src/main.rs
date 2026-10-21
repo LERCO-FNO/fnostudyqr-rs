@@ -28,10 +28,10 @@ struct Args {
     /// otherwise set with --called-ae-title.
     addr: String,
     /// Input file with study identifiers. Requires non-empty StudyInstanceUID or PatientID with StudyDate.
-    #[arg(short = 'i', long, value_name = "PATH", global = true)]
+    #[arg(short = 'i', long, value_name = "PATH")]
     in_study_file: Option<PathBuf>,
     /// Additional sequence of tags
-    #[arg(short = 'q', long, global = true)]
+    #[arg(short = 'q', long)]
     query_tag: Vec<String>,
     /// Calling AE title
     #[arg(short = 't', long = "calling-ae-title", required = true)]
@@ -352,6 +352,3 @@ async fn run_async(store_args: StoreScpArgs) -> Result<std::convert::Infallible,
         });
     }
 }
-
-#[cfg(test)]
-mod tests {}
