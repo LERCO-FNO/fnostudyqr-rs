@@ -159,7 +159,7 @@ fn write_to_json<W: std::io::Write>(
         let tags = query_set.tags_for(resp.query_index);
         let keys: Vec<String> = tags.iter().map(|&t| tag_label(t, &dict)).collect();
         for obj in &resp.matches {
-            let values = serialize_dataset(tags, obj);
+            let values = serialize_dataset(&tags, obj);
             seq.serialize_element(&Row {
                 keys: &keys,
                 values: &values,
@@ -255,41 +255,95 @@ mod tests {
 
     use super::*;
 
+    fn default_objects_per_query_tags() -> DicomQuerySet {
+        let items = vec![
+            (
+                InMemDicomObject::from_element_iter([
+                    DataElement::new(tags::PATIENT_ID, VR::PN, "ID01"),
+                    DataElement::new(tags::STUDY_DATE, VR::DA, "20150328"),
+                    DataElement::new(tags::PATIENT_AGE, VR::AS, ""),
+                ]),
+                vec![tags::PATIENT_ID, tags::STUDY_DATE, tags::PATIENT_AGE],
+            ),
+            (
+                InMemDicomObject::from_element_iter([
+                    DataElement::new(tags::PATIENT_ID, VR::PN, "ID02"),
+                    DataElement::new(tags::STUDY_DATE, VR::DA, "20250820"),
+                    DataElement::new(tags::MODALITIES_IN_STUDY, VR::CS, ""),
+                ]),
+                vec![
+                    tags::PATIENT_ID,
+                    tags::STUDY_DATE,
+                    tags::MODALITIES_IN_STUDY,
+                ],
+            ),
+        ];
+        DicomQuerySet::with_per_query_tags(items)
+    }
+
+    fn default_responses() -> Vec<FindResult> {
+        vec![
+            FindResult {
+                query_index: 0,
+                matches: vec![InMemDicomObject::from_element_iter([
+                    DataElement::new(tags::PATIENT_ID, VR::PN, "ID01"),
+                    DataElement::new(tags::STUDY_DATE, VR::DA, "20150328"),
+                    DataElement::new(tags::PATIENT_AGE, VR::AS, "050Y"),
+                ])],
+            },
+            FindResult {
+                query_index: 1,
+                matches: vec![InMemDicomObject::from_element_iter([
+                    DataElement::new(tags::PATIENT_ID, VR::PN, "ID02"),
+                    DataElement::new(tags::STUDY_DATE, VR::DA, "20250820"),
+                    DataElement::new(tags::MODALITIES_IN_STUDY, VR::CS, "CT\\SR"),
+                ])],
+            },
+        ]
+    }
+
     #[test]
-    fn serialize_json() {
-        let datasets = [
-            InMemDicomObject::from_element_iter([
-                DataElement::new(tags::PATIENT_ID, VR::PN, "0123"),
-                DataElement::new(tags::PATIENT_NAME, VR::PN, "Some^Name"),
-                DataElement::new(tags::STUDY_DATE, VR::DA, "20150328"),
-                DataElement::new(tags::PATIENT_AGE, VR::AS, "023W"),
-            ]),
-            InMemDicomObject::from_element_iter([
-                DataElement::new(tags::PATIENT_ID, VR::PN, "09887"),
-                DataElement::new(tags::PATIENT_NAME, VR::PN, "Other^Name"),
-                DataElement::new(tags::STUDY_DATE, VR::DA, "20250820"),
-                DataElement::new(tags::STUDY_TIME, VR::TM, "053010"),
-                DataElement::new(tags::DATE_TIME, VR::DT, "20250820053010"),
-                DataElement::new(tags::PATIENT_AGE, VR::AS, "056Y"),
-            ]),
-        ];
+    fn test_serialize_to_json() {
+        let queries = default_objects_per_query_tags();
+        let responses = default_responses();
+        let mut writer: Vec<u8> = Vec::new();
 
-        let dict = StandardDataDictionary;
+        write_to_json(&mut writer, &queries, &responses)
+            .expect("Failed serializing responses to JSON");
+        let expected: serde_json::Value =
+            serde_json::from_slice(&writer).expect("Expected a valid JSON");
+        assert_eq!(
+            expected,
+            serde_json::json!(
+                [
+                    {
+                        "PatientID": "ID01",
+                        "StudyDate": "2015-03-28",
+                        "PatientAge": "050Y"
+                    },
+                    {
+                        "PatientID": "ID02",
+                        "StudyDate": "2025-08-20",
+                        "ModalitiesInStudy": "CT\\SR"
+                    }
+                ]
+            )
+        )
+    }
 
-        let query_tags = [
-            tags::PATIENT_NAME,
-            tags::STUDY_DATE,
-            tags::STUDY_TIME,
-            tags::DATE_TIME,
-            tags::PATIENT_AGE,
-        ];
+    #[test]
+    fn test_serialize_to_csv() {
+        let queries = default_objects_per_query_tags();
+        let responses = default_responses();
+        let mut writer: Vec<u8> = Vec::new();
 
-        // let ser = dicom_json::to_string(&ds);
+        write_to_csv(&mut writer, &queries, &responses)
+            .expect("Failed serializing responses to CSV");
 
-        // let json = serde_json::to_string_pretty(&TagData {
-        //     header
-        //     values,
-        // });
-        // println!("{json:?}");
+        let expected = String::from_utf8(writer).expect("Expected a valid CSV");
+        assert_eq!(
+            expected,
+            "StudyDate;ModalitiesInStudy;PatientID;PatientAge\n2015-03-28;;ID01;050Y\n2025-08-20;CT\\SR;ID02;\n"
+        )
     }
 }
