@@ -87,13 +87,9 @@ mod tests {
 
     #[test]
     fn test_is_valid_response_path() {
-        let path = "./response.json";
+        let path = "example/example-many.json";
         let res = validate_response_filepath(path);
         assert!(res.is_ok());
-
-        let path = "/home/vojt/prace/fnostudyqr-rs/response.json";
-        let res = validate_response_filepath(path);
-        assert!(res.is_ok())
     }
 
     #[test]
