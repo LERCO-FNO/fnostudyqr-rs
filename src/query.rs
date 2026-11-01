@@ -1,6 +1,6 @@
 use dicom_core::header::HasLength;
 use dicom_core::ops::{ApplyOp, AttributeAction, AttributeOp, AttributeSelector};
-use dicom_core::{DataDictionary, DataElement, PrimitiveValue, Tag, VR};
+use dicom_core::{DataDictionary, Tag};
 use dicom_dictionary_std::StandardDataDictionary;
 use dicom_dictionary_std::tags::{PATIENT_ID, STUDY_DATE, STUDY_INSTANCE_UID};
 use dicom_object::InMemDicomObject;
