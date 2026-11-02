@@ -352,3 +352,14 @@ async fn run_async(store_args: StoreScpArgs) -> Result<std::convert::Infallible,
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::Args;
+    use clap::CommandFactory;
+
+    #[test]
+    fn verify_cli() {
+        Args::command().debug_assert();
+    }
+}
